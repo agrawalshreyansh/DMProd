@@ -46,6 +46,8 @@ export default defineConfig({
         APP_ENCRYPTION_KEY: BACKEND_ENCRYPTION_KEY,
         JWT_SECRET: "e2e-test-secret",
         CORS_ORIGIN: `http://localhost:${FRONTEND_PORT}`,
+        META_APP_SECRET: "e2e-test-meta-app-secret",
+        WEBHOOK_VERIFY_TOKEN: "e2e-test-verify-token",
       },
     },
     {

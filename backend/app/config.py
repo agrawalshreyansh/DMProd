@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     jwt_secret: str
     jwt_expire_minutes: int = 10080
     cors_origin: str = "http://localhost:3000"
+    meta_app_secret: str
+    webhook_verify_token: str
 
 
 settings = Settings()
