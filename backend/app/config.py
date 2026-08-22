@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     cors_origin: str = "http://localhost:3000"
     meta_app_secret: str
     webhook_verify_token: str
+    instagram_bot_access_token: str
 
 
 settings = Settings()

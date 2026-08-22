@@ -6,6 +6,7 @@ os.environ.setdefault("APP_ENCRYPTION_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret")
 os.environ.setdefault("META_APP_SECRET", "test-meta-app-secret")
 os.environ.setdefault("WEBHOOK_VERIFY_TOKEN", "test-verify-token")
+os.environ.setdefault("INSTAGRAM_BOT_ACCESS_TOKEN", "test-bot-access-token")
 
 import pytest
 import pytest_asyncio
@@ -40,11 +41,7 @@ def signup_body():
 
 @pytest.fixture
 def instagram_webhook_payload():
-    # ponytail: synthetic, shaped like Meta's documented Messenger-style
-    # webhook envelope. The exact reel-attachment fields aren't confirmed
-    # against a real payload yet (that happens during this phase's manual
-    # DM test) — this fixture exists to exercise parsing/logging/signature
-    # verification, not to assert a confirmed reel-attachment schema.
+    # Shape confirmed against a real Meta delivery during manual testing.
     return {
         "object": "instagram",
         "entry": [
@@ -59,7 +56,14 @@ def instagram_webhook_payload():
                         "message": {
                             "mid": "aWdfZAG1faXRlbToxOgN...",
                             "attachments": [
-                                {"type": "ig_reel", "payload": {"url": "https://example.com/reel.mp4"}}
+                                {
+                                    "type": "ig_reel",
+                                    "payload": {
+                                        "reel_video_id": "17871182922633701",
+                                        "title": "A reel about something",
+                                        "url": "https://www.instagram.com/reel/abc123/",
+                                    },
+                                }
                             ],
                         },
                     }
