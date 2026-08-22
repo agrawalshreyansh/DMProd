@@ -48,16 +48,23 @@ async def test_settings_endpoint_round_trip(client, signup_body):
     headers = {"Authorization": f"Bearer {token}"}
 
     before = await client.get("/api/v1/settings/gemini-key", headers=headers)
-    assert before.json() == {"connected": False}
+    assert before.json() == {"connected": False, "masked_key": None}
 
     put = await client.put(
         "/api/v1/settings/gemini-key", json={"api_key": "sk-real-key"}, headers=headers
     )
     assert put.status_code == 200
-    assert put.json() == {"connected": True}
+    assert put.json() == {"connected": True, "masked_key": "••••-key"}
 
     after = await client.get("/api/v1/settings/gemini-key", headers=headers)
-    assert after.json() == {"connected": True}
+    assert after.json() == {"connected": True, "masked_key": "••••-key"}
+
+    put_again = await client.put(
+        "/api/v1/settings/gemini-key", json={"api_key": "sk-second-key"}, headers=headers
+    )
+    assert put_again.json() == {"connected": True, "masked_key": "••••-key"}
+    docs = await UserCredential.find(UserCredential.provider == "gemini").to_list()
+    assert len(docs) == 1
 
     doc = await UserCredential.find_one(UserCredential.provider == "gemini")
     assert "sk-real-key" not in doc.encrypted_secret

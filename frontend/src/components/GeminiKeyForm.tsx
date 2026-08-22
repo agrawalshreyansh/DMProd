@@ -5,12 +5,15 @@ import { useRouter } from "next/navigation";
 
 export default function GeminiKeyForm({
   initiallyConnected,
+  initialMaskedKey,
 }: {
   initiallyConnected: boolean;
+  initialMaskedKey: string | null;
 }) {
   const router = useRouter();
   const [apiKey, setApiKey] = useState("");
   const [connected, setConnected] = useState(initiallyConnected);
+  const [maskedKey, setMaskedKey] = useState(initialMaskedKey);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,7 +35,9 @@ export default function GeminiKeyForm({
       return;
     }
 
+    const body = await res.json();
     setConnected(true);
+    setMaskedKey(body.masked_key);
     setApiKey("");
     router.refresh();
   }
@@ -49,13 +54,13 @@ export default function GeminiKeyForm({
           }
         >
           {connected && <span className="h-1.5 w-1.5 rounded-full bg-accent-signal" />}
-          {connected ? "Connected" : "Not connected"}
+          {connected && maskedKey ? maskedKey : connected ? "Connected" : "Not connected"}
         </span>
       </div>
       <form onSubmit={onSubmit} className="flex gap-2">
         <input
           type="password"
-          placeholder="Paste your Gemini API key"
+          placeholder={connected ? "Enter a new key to replace it" : "Paste your Gemini API key"}
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           required
@@ -66,7 +71,7 @@ export default function GeminiKeyForm({
           disabled={saving}
           className="rounded-md bg-accent-signal px-4 py-2 font-medium text-background transition hover:brightness-110 disabled:opacity-50"
         >
-          {saving ? "Saving..." : "Save"}
+          {saving ? "Saving..." : connected ? "Replace" : "Save"}
         </button>
       </form>
       {error && <p className="text-sm text-accent-warm">{error}</p>}
