@@ -1,26 +1,82 @@
 @import "tailwindcss";
 
+/*
+  Design direction: "deep water / signal intelligence."
+  Dolphin AI reads reels (sound) and turns them into structured tasks —
+  echolocation is the literal metaphor: a signal goes out, comes back
+  decoded. Dark, blue-black "deep water" base; a bioluminescent teal
+  (--accent-signal) for anything live/active; a warm coral (--accent-warm)
+  reserved for completed/highlighted states, so the palette isn't a single
+  neon-on-black note.
+*/
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0b1220;
+  --background-elevated: #121b2e;
+  --background-elevated-2: #1a2540;
+  --border: #26324d;
+  --foreground: #eaf2f7;
+  --foreground-muted: #92a3bd;
+  --accent-signal: #2de2c3;
+  --accent-signal-dim: #1f9c88;
+  --accent-warm: #ff8a5c;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-background-elevated: var(--background-elevated);
+  --color-background-elevated-2: var(--background-elevated-2);
+  --color-border: var(--border);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-foreground-muted: var(--foreground-muted);
+  --color-accent-signal: var(--accent-signal);
+  --color-accent-signal-dim: var(--accent-signal-dim);
+  --color-accent-warm: var(--accent-warm);
+  --font-display: var(--font-space-grotesk);
+  --font-mono: var(--font-jetbrains-mono);
+  --font-sans: var(--font-inter);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+@keyframes signal-pulse {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+@keyframes ping-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.animate-signal-pulse {
+  animation: signal-pulse 2.4s ease-in-out infinite;
+}
+
+.animate-ping-dot {
+  animation: ping-dot 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

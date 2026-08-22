@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Wordmark from "@/components/Wordmark";
 
 type Mode = "login" | "signup";
 
@@ -57,38 +58,45 @@ export default function AuthForm({ mode }: { mode: Mode }) {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-4 p-6">
-      <h1 className="text-2xl font-semibold">{copy.title}</h1>
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
-        <input
-          type="email"
-          required
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="rounded border px-3 py-2"
-        />
-        <input
-          type="password"
-          required
-          minLength={8}
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="rounded border px-3 py-2"
-        />
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded bg-black px-3 py-2 text-white disabled:opacity-50"
-        >
-          {loading ? "Please wait..." : copy.cta}
-        </button>
-      </form>
-      <p className="text-sm text-gray-600">
+    <main className="mx-auto flex min-h-screen w-full max-w-sm flex-col justify-center gap-8 px-6">
+      <Link href="/" className="w-fit">
+        <Wordmark className="text-base text-foreground-muted transition hover:text-foreground" />
+      </Link>
+
+      <div className="flex flex-col gap-6 rounded-lg border border-border bg-background-elevated p-6">
+        <h1 className="font-display text-xl font-semibold">{copy.title}</h1>
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
+          <input
+            type="email"
+            required
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="rounded-md border border-border bg-background px-3 py-2 text-foreground placeholder:text-foreground-muted outline-none focus:border-accent-signal focus:ring-1 focus:ring-accent-signal"
+          />
+          <input
+            type="password"
+            required
+            minLength={8}
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="rounded-md border border-border bg-background px-3 py-2 text-foreground placeholder:text-foreground-muted outline-none focus:border-accent-signal focus:ring-1 focus:ring-accent-signal"
+          />
+          {error && <p className="text-sm text-accent-warm">{error}</p>}
+          <button
+            type="submit"
+            disabled={loading}
+            className="rounded-md bg-accent-signal px-3 py-2 font-medium text-background transition hover:brightness-110 disabled:opacity-50"
+          >
+            {loading ? "Please wait..." : copy.cta}
+          </button>
+        </form>
+      </div>
+
+      <p className="text-center text-sm text-foreground-muted">
         {copy.footer}{" "}
-        <Link href={copy.footerHref} className="underline">
+        <Link href={copy.footerHref} className="text-accent-signal underline underline-offset-2">
           {copy.footerLinkText}
         </Link>
       </p>

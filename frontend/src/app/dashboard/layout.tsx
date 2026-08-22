@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getToken } from "@/lib/session";
 import LogoutButton from "@/components/LogoutButton";
+import Wordmark from "@/components/Wordmark";
 
 const NAV = [
   { href: "/dashboard", label: "Overview" },
@@ -27,12 +28,20 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex min-h-screen">
-      <nav className="w-56 shrink-0 border-r border-gray-200 p-4">
-        <p className="mb-4 text-lg font-semibold">DMProd</p>
-        <ul className="flex flex-col gap-2 text-sm text-gray-700">
+      <nav className="flex w-60 shrink-0 flex-col border-r border-border bg-background-elevated p-5">
+        <Link href="/dashboard" className="mb-8">
+          <Wordmark className="text-base text-foreground" />
+        </Link>
+        <span className="mb-2 font-mono text-xs uppercase tracking-widest text-foreground-muted">
+          Menu
+        </span>
+        <ul className="flex flex-col gap-0.5 text-sm">
           {NAV.map((item) => (
             <li key={item.href}>
-              <Link href={item.href} className="hover:underline">
+              <Link
+                href={item.href}
+                className="block rounded-md px-2 py-1.5 text-foreground-muted transition hover:bg-background-elevated-2 hover:text-foreground"
+              >
                 {item.label}
               </Link>
             </li>
@@ -40,7 +49,7 @@ export default async function DashboardLayout({
         </ul>
         <LogoutButton />
       </nav>
-      <main className="flex-1 p-8">{children}</main>
+      <main className="flex-1 p-10">{children}</main>
     </div>
   );
 }

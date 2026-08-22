@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import GeminiKeyForm from "@/components/GeminiKeyForm";
 
@@ -15,15 +15,15 @@ beforeEach(() => {
 
 test("shows not connected when no key is saved yet", () => {
   render(<GeminiKeyForm initiallyConnected={false} />);
-  expect(screen.getByText("not connected")).toBeInTheDocument();
+  expect(screen.getByText("Not connected")).toBeInTheDocument();
 });
 
-test("shows saved when a key is already connected", () => {
+test("shows connected when a key is already saved", () => {
   render(<GeminiKeyForm initiallyConnected={true} />);
-  expect(screen.getByText("●●●● saved")).toBeInTheDocument();
+  expect(screen.getByText("Connected")).toBeInTheDocument();
 });
 
-test("saving a key calls the settings endpoint and flips to saved", async () => {
+test("saving a key calls the settings endpoint and flips to connected", async () => {
   (global.fetch as jest.Mock).mockResolvedValueOnce({
     ok: true,
     json: async () => ({ connected: true }),
@@ -37,7 +37,7 @@ test("saving a key calls the settings endpoint and flips to saved", async () => 
   );
   await userEvent.click(screen.getByRole("button", { name: /save/i }));
 
-  expect(await screen.findByText("●●●● saved")).toBeInTheDocument();
+  expect(await screen.findByText("Connected")).toBeInTheDocument();
   expect(global.fetch).toHaveBeenCalledWith(
     "/api/settings/gemini-key",
     expect.objectContaining({
@@ -59,5 +59,5 @@ test("shows an error and stays not connected when the save fails", async () => {
   await userEvent.click(screen.getByRole("button", { name: /save/i }));
 
   expect(await screen.findByText(/could not save key/i)).toBeInTheDocument();
-  expect(screen.getByText("not connected")).toBeInTheDocument();
+  expect(screen.getByText("Not connected")).toBeInTheDocument();
 });

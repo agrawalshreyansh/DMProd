@@ -12,14 +12,14 @@ test("sign up, save Gemini key, reload, key still shows as saved", async ({ page
 
   await page.getByRole("link", { name: "Settings" }).click();
   await expect(page).toHaveURL("/dashboard/settings");
-  await expect(page.getByText("not connected")).toBeVisible();
+  await expect(page.getByText("Not connected")).toBeVisible();
 
   await page.getByPlaceholder("Paste your Gemini API key").fill("sk-e2e-test-key");
   await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText("●●●● saved")).toBeVisible();
+  await expect(page.getByText("Connected")).toBeVisible();
 
   await page.reload();
-  await expect(page.getByText("●●●● saved")).toBeVisible();
+  await expect(page.getByText("Connected")).toBeVisible();
 
   await page.getByRole("button", { name: "Log out" }).click();
   await expect(page).toHaveURL("/login");

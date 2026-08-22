@@ -12,7 +12,10 @@ export default function LogoutButton() {
   }
 
   return (
-    <button onClick={onClick} className="mt-6 text-sm text-red-600 hover:underline">
+    <button
+      onClick={onClick}
+      className="mt-auto flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground-muted transition hover:bg-background-elevated-2 hover:text-accent-warm"
+    >
       Log out
     </button>
   );

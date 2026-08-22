@@ -8,8 +8,8 @@ export default async function SettingsPage() {
   const { connected } = await res.json();
 
   return (
-    <div className="max-w-md">
-      <h1 className="mb-4 text-xl font-semibold">Settings</h1>
+    <div className="flex max-w-md flex-col gap-4">
+      <h1 className="font-display text-xl font-semibold">Settings</h1>
       <GeminiKeyForm initiallyConnected={connected} />
     </div>
   );

@@ -38,13 +38,20 @@ export default function GeminiKeyForm({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm text-gray-600">
-        Gemini API key:{" "}
-        <span className={connected ? "text-green-700" : "text-gray-500"}>
-          {connected ? "●●●● saved" : "not connected"}
+    <div className="flex flex-col gap-4 rounded-lg border border-border bg-background-elevated p-6">
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-foreground-muted">Gemini API key</span>
+        <span
+          className={
+            connected
+              ? "flex items-center gap-1.5 font-medium text-accent-signal"
+              : "font-medium text-foreground-muted"
+          }
+        >
+          {connected && <span className="h-1.5 w-1.5 rounded-full bg-accent-signal" />}
+          {connected ? "Connected" : "Not connected"}
         </span>
-      </p>
+      </div>
       <form onSubmit={onSubmit} className="flex gap-2">
         <input
           type="password"
@@ -52,17 +59,17 @@ export default function GeminiKeyForm({
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           required
-          className="flex-1 rounded border px-3 py-2"
+          className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-foreground placeholder:text-foreground-muted outline-none focus:border-accent-signal focus:ring-1 focus:ring-accent-signal"
         />
         <button
           type="submit"
           disabled={saving}
-          className="rounded bg-black px-3 py-2 text-white disabled:opacity-50"
+          className="rounded-md bg-accent-signal px-4 py-2 font-medium text-background transition hover:brightness-110 disabled:opacity-50"
         >
           {saving ? "Saving..." : "Save"}
         </button>
       </form>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-accent-warm">{error}</p>}
     </div>
   );
 }
