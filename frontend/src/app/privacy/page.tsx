@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Wordmark from "@/components/Wordmark";
+import { PolicyPage, Section, List } from "@/components/PolicyPage";
 
 export const metadata = {
   title: "Privacy Policy — Dolphin AI",
@@ -13,19 +13,7 @@ const CONTACT_EMAIL = "privacy@dolphinai.app"; // [PLACEHOLDER] replace with a r
 
 export default function PrivacyPolicyPage() {
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-10 px-6 py-16">
-      <header className="flex flex-col gap-4">
-        <Link href="/" className="w-fit">
-          <Wordmark className="text-base text-foreground-muted transition hover:text-foreground" />
-        </Link>
-        <div className="flex flex-col gap-1">
-          <h1 className="font-display text-3xl font-semibold tracking-tight">Privacy Policy</h1>
-          <p className="font-mono text-xs uppercase tracking-widest text-foreground-muted">
-            Effective {EFFECTIVE_DATE}
-          </p>
-        </div>
-      </header>
-
+    <PolicyPage title="Privacy Policy" effectiveDate={EFFECTIVE_DATE}>
       <Section title="Overview">
         <p>
           Dolphin AI (&ldquo;we&rdquo;, &ldquo;us&rdquo;) is a service that
@@ -95,9 +83,7 @@ export default function PrivacyPolicyPage() {
           We retain your account and connected-account information for as
           long as your account is active. Downloaded reel video is deleted
           after audio extraction; we retain the transcript and generated
-          task so you can see your own history in the dashboard. You can
-          request deletion of your account and all associated data at any
-          time — see Contact below.
+          task so you can see your own history in the dashboard.
         </p>
       </Section>
 
@@ -114,8 +100,12 @@ export default function PrivacyPolicyPage() {
         <p>
           You can disconnect your Instagram account, remove integration
           connections, or delete your Gemini API key at any time from the
-          dashboard. To request a full export or deletion of your account
-          and associated data, contact us using the details below.
+          dashboard. To request deletion of your account and all associated
+          data, see our{" "}
+          <Link href="/data-deletion" className="text-accent-signal underline underline-offset-2">
+            Data Deletion Instructions
+          </Link>
+          .
         </p>
       </Section>
 
@@ -135,37 +125,6 @@ export default function PrivacyPolicyPage() {
           .
         </p>
       </Section>
-    </main>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="flex flex-col gap-3 border-t border-border pt-6">
-      <h2 className="font-display font-semibold text-foreground">{title}</h2>
-      <div className="flex flex-col gap-3 text-sm leading-relaxed text-foreground-muted">
-        {children}
-      </div>
-    </section>
-  );
-}
-
-function List({ items, plain }: { items: [string, string][]; plain?: boolean }) {
-  return (
-    <ul className="flex flex-col gap-2">
-      {items.map(([label, body]) => (
-        <li key={label}>
-          {plain ? (
-            <>
-              <span className="font-medium text-foreground">{label}</span> — {body}
-            </>
-          ) : (
-            <>
-              <span className="font-medium text-foreground">{label}.</span> {body}
-            </>
-          )}
-        </li>
-      ))}
-    </ul>
+    </PolicyPage>
   );
 }

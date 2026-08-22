@@ -94,11 +94,19 @@ export default async function Home() {
         </p>
       </section>
 
-      <footer className="mt-auto flex items-center justify-between border-t border-border py-8 text-sm text-foreground-muted">
+      <footer className="mt-auto flex flex-wrap items-center justify-between gap-4 border-t border-border py-8 text-sm text-foreground-muted">
         <span>&copy; {new Date().getFullYear()} Dolphin AI</span>
-        <Link href="/privacy" className="transition hover:text-foreground">
-          Privacy Policy
-        </Link>
+        <nav className="flex gap-5">
+          <Link href="/privacy" className="transition hover:text-foreground">
+            Privacy Policy
+          </Link>
+          <Link href="/terms" className="transition hover:text-foreground">
+            Terms of Service
+          </Link>
+          <Link href="/data-deletion" className="transition hover:text-foreground">
+            Data Deletion
+          </Link>
+        </nav>
       </footer>
     </main>
   );
