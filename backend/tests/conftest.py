@@ -8,14 +8,22 @@ os.environ.setdefault("META_APP_SECRET", "test-meta-app-secret")
 os.environ.setdefault("WEBHOOK_VERIFY_TOKEN", "test-verify-token")
 os.environ.setdefault("INSTAGRAM_BOT_ACCESS_TOKEN", "test-bot-access-token")
 
+import fakeredis
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from mongomock_motor import AsyncMongoMockClient
 
+import app.queue as queue_module
 from app.db import init_db
 from app.main import create_app
 from app.models import document_models
+
+
+@pytest.fixture(autouse=True)
+def fake_redis(monkeypatch):
+    """No real Redis in tests — every test gets its own fake queue."""
+    monkeypatch.setattr(queue_module, "_connection", fakeredis.FakeStrictRedis())
 
 
 @pytest_asyncio.fixture

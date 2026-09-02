@@ -6,8 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
 from app.api.instagram import router as instagram_router
+from app.api.integrations import router as integrations_router
+from app.api.preferences import router as preferences_router
 from app.api.reels import router as reels_router
 from app.api.settings_routes import router as settings_router
+from app.api.tasks import router as tasks_router
 from app.api.webhooks import router as webhooks_router
 from app.config import settings
 from app.db import init_db
@@ -42,6 +45,9 @@ def create_app() -> FastAPI:
     app.include_router(webhooks_router)
     app.include_router(instagram_router)
     app.include_router(reels_router)
+    app.include_router(tasks_router)
+    app.include_router(integrations_router)
+    app.include_router(preferences_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

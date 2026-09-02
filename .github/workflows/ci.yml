@@ -15,6 +15,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg build-essential cmake git
+      - name: Build whisper.cpp (same version as Dockerfile.worker)
+        run: |
+          git clone --depth 1 --branch v1.9.2 https://github.com/ggml-org/whisper.cpp.git /tmp/whisper.cpp
+          cmake -B /tmp/whisper.cpp/build -S /tmp/whisper.cpp
+          cmake --build /tmp/whisper.cpp/build --config Release -j "$(nproc)"
+          sudo cp /tmp/whisper.cpp/build/bin/whisper-cli /usr/local/bin/whisper-cli
+      - name: Fetch tiny whisper model (plumbing test only, not the small model the worker runs)
+        run: |
+          mkdir -p models
+          curl -L -o models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
       - run: pip install -r requirements-dev.txt
       - run: pytest -q
 

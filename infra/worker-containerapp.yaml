@@ -1,0 +1,42 @@
+# Azure Container Apps definition for the Processing Worker (Phase 3).
+#
+# Written now per Phase 3's checklist so the KEDA scale rule is decided and
+# reviewable; not deployed until Phase 11. Fill in <angle-bracket> values
+# during that phase (registry image tag, real Redis host, secret refs to
+# the same env vars the API container app already needs).
+#
+# RQ's `Queue("reels", ...)` stores pending jobs in the Redis list
+# `rq:queue:reels` — that's the `listName` KEDA watches.
+properties:
+  configuration:
+    secrets:
+      - name: redis-password
+        value: <redis-password>
+      - name: mongo-uri
+        value: <mongo-uri>
+      - name: env-file-secrets
+        value: <same-secrets-the-api-container-app-uses-see-Dockerfile.worker-comment>
+  template:
+    containers:
+      - image: <registry>/dmprod-worker:<tag>
+        name: worker
+        env:
+          - name: MONGO_URI
+            secretRef: mongo-uri
+          - name: REDIS_URL
+            value: rediss://default:<redis-password>@<redis-host>:<redis-port>
+    scale:
+      minReplicas: 0
+      maxReplicas: 5
+      rules:
+        - name: redis-queue-scale
+          custom:
+            type: redis
+            metadata:
+              address: <redis-host>:<redis-port>
+              listName: rq:queue:reels
+              listLength: "1"
+              enableTLS: "true"
+            auth:
+              - secretRef: redis-password
+                triggerParameter: password

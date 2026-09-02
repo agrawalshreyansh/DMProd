@@ -7,7 +7,9 @@ from app.api import webhooks as webhooks_api
 from app.models.instagram_account import InstagramAccount
 from app.models.pending_verification import PendingVerification
 from app.models.reel import Reel
+from app.models.user_reel import UserReel
 from app.models.webhook_event_log import WebhookEventLog
+from app.queue import get_queue
 from tests.conftest import sign_payload
 
 
@@ -113,12 +115,21 @@ async def test_reel_from_linked_sender_is_stored_against_the_right_user(
     )
     assert resp.status_code == 200
 
+    shares = await UserReel.find_all().to_list()
+    assert len(shares) == 1
+    assert shares[0].user_id == "user-abc"
+    assert shares[0].sender_ig_id == "1234567890"
+
     reels = await Reel.find_all().to_list()
     assert len(reels) == 1
-    assert reels[0].user_id == "user-abc"
-    assert reels[0].sender_ig_id == "1234567890"
     assert reels[0].reel_video_id == "17871182922633701"
     assert reels[0].caption == "A reel about something"
+    assert reels[0].status == "queued"
+    assert shares[0].reel_id == str(reels[0].id)
+
+    jobs = get_queue().jobs
+    assert len(jobs) == 1
+    assert jobs[0].args == (str(reels[0].id),)
 
 
 async def test_reel_from_unlinked_sender_is_not_stored(client, instagram_webhook_payload):
@@ -130,6 +141,8 @@ async def test_reel_from_unlinked_sender_is_not_stored(client, instagram_webhook
     )
     assert resp.status_code == 200
     assert await Reel.find_all().to_list() == []
+    assert await UserReel.find_all().to_list() == []
+    assert get_queue().jobs == []
 
 
 async def test_redelivered_event_does_not_duplicate_the_reel(client, instagram_webhook_payload):
@@ -145,6 +158,88 @@ async def test_redelivered_event_does_not_duplicate_the_reel(client, instagram_w
 
     assert resp.status_code == 200
     assert len(await Reel.find_all().to_list()) == 1
+    assert len(await UserReel.find_all().to_list()) == 1
+    assert len(get_queue().jobs) == 1
+
+
+async def test_second_user_sharing_an_already_transcribed_reel_reuses_it(
+    client, instagram_webhook_payload
+):
+    await InstagramAccount(
+        user_id="user-abc", ig_user_id="1234567890", username="alex"
+    ).insert()
+    await InstagramAccount(
+        user_id="user-xyz", ig_user_id="9999999999", username="sam"
+    ).insert()
+
+    body = json.dumps(instagram_webhook_payload).encode()
+    resp = await client.post(
+        "/webhooks/instagram",
+        content=body,
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": sign_payload(body)},
+    )
+    assert resp.status_code == 200
+
+    reel = await Reel.find_one(Reel.reel_video_id == "17871182922633701")
+    reel.status = "transcribed"
+    reel.transcript_text = "already transcribed"
+    await reel.save()
+
+    second_payload = json.loads(body)
+    event = second_payload["entry"][0]["messaging"][0]
+    event["sender"]["id"] = "9999999999"
+    event["message"]["mid"] = "a-different-message-id"
+    second_body = json.dumps(second_payload).encode()
+    resp = await client.post(
+        "/webhooks/instagram",
+        content=second_body,
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": sign_payload(second_body)},
+    )
+    assert resp.status_code == 200
+
+    assert len(await Reel.find_all().to_list()) == 1
+    shares = await UserReel.find_all().to_list()
+    assert len(shares) == 2
+    assert {s.user_id for s in shares} == {"user-abc", "user-xyz"}
+    assert all(s.reel_id == str(reel.id) for s in shares)
+
+    # First share triggers the reel content pipeline; the second reuses the
+    # already-transcribed reel and instead goes straight to its own (per-user)
+    # task generation.
+    jobs = get_queue().jobs
+    job_names = [j.func_name for j in jobs]
+    assert len(jobs) == 2
+    assert job_names.count("app.workers.process_reel.process_reel") == 1
+    assert job_names.count("app.workers.task_generation.generate_task") == 1
+
+
+async def test_same_user_resharing_the_same_reel_does_not_duplicate_the_share(
+    client, instagram_webhook_payload
+):
+    await InstagramAccount(
+        user_id="user-abc", ig_user_id="1234567890", username="alex"
+    ).insert()
+
+    body = json.dumps(instagram_webhook_payload).encode()
+    resp = await client.post(
+        "/webhooks/instagram",
+        content=body,
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": sign_payload(body)},
+    )
+    assert resp.status_code == 200
+
+    second_payload = json.loads(body)
+    second_payload["entry"][0]["messaging"][0]["message"]["mid"] = "a-different-message-id"
+    second_body = json.dumps(second_payload).encode()
+    resp = await client.post(
+        "/webhooks/instagram",
+        content=second_body,
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": sign_payload(second_body)},
+    )
+    assert resp.status_code == 200
+
+    assert len(await Reel.find_all().to_list()) == 1
+    assert len(await UserReel.find_all().to_list()) == 1
 
 
 async def test_dm_with_valid_code_links_the_sender_and_fetches_their_username(

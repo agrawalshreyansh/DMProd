@@ -6,23 +6,27 @@ from pymongo import IndexModel
 
 
 class Reel(Document):
-    """A reel a verified user shared with the bot, resolved to their account.
-
-    `message_id` carries a unique index because Meta can redeliver the same
-    webhook event — this is what makes storing a reel idempotent.
+    """Shared reel content — one document per distinct `reel_video_id`,
+    regardless of how many users shared it. Per-user share events live in
+    `UserReel`; this doc holds only what the processing pipeline produces.
     """
 
-    user_id: str
-    sender_ig_id: str
-    message_id: str
     reel_video_id: str | None = None
     url: str | None = None
     caption: str | None = None
-    received_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    status: str = "received"
+    error_message: str | None = None
+    transcript_text: str | None = None
+    transcript_language: str | None = None
+    transcript_duration_seconds: float | None = None
+    first_seen_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:
         name = "reels"
         indexes = [
-            IndexModel([("message_id", 1)], unique=True),
-            IndexModel([("user_id", 1), ("received_at", -1)]),
+            IndexModel(
+                [("reel_video_id", 1)],
+                unique=True,
+                partialFilterExpression={"reel_video_id": {"$exists": True}},
+            ),
         ]

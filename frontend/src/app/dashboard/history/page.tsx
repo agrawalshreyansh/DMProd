@@ -1,5 +1,5 @@
 import { getToken } from "@/lib/session";
-import { backendFetch } from "@/lib/api";
+import { backendFetch, requireJson } from "@/lib/api";
 
 type Reel = {
   id: string;
@@ -11,7 +11,7 @@ type Reel = {
 export default async function HistoryPage() {
   const token = await getToken();
   const res = await backendFetch("/api/v1/reels", {}, token);
-  const reels: Reel[] = await res.json();
+  const reels = await requireJson<Reel[]>(res);
 
   return (
     <div className="flex max-w-2xl flex-col gap-4">

@@ -3,14 +3,19 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response, status
+from rq import Retry
 
 from app.config import settings
 from app.models.instagram_account import InstagramAccount
 from app.models.pending_verification import PendingVerification
 from app.models.reel import Reel
+from app.models.user_reel import UserReel
 from app.models.webhook_event_log import WebhookEventLog
+from app.queue import get_queue
 from app.services.instagram_profile import fetch_username
 from app.services.webhook_security import verify_signature
+from app.workers.process_reel import process_reel
+from app.workers.task_generation import generate_task
 
 logger = logging.getLogger("webhooks.instagram")
 
@@ -30,7 +35,7 @@ async def verify_subscription(request: Request) -> Response:
     raise HTTPException(status.HTTP_403_FORBIDDEN, "Verification failed")
 
 
-async def _store_reel_if_any(user_id: str, sender_ig_id: str, event: dict[str, Any]) -> None:
+async def _record_reel_share(user_id: str, sender_ig_id: str, event: dict[str, Any]) -> None:
     message = event.get("message", {})
     message_id = message.get("mid")
     if not message_id:
@@ -40,18 +45,44 @@ async def _store_reel_if_any(user_id: str, sender_ig_id: str, event: dict[str, A
         if attachment.get("type") != "ig_reel":
             continue
         # Meta can redeliver the same webhook event — check first so a
-        # redelivery is a no-op instead of a raised DuplicateKeyError.
-        if await Reel.find_one(Reel.message_id == message_id):
+        # redelivery is a no-op instead of a raised DuplicateKeyError (and
+        # so it doesn't enqueue a second job for it).
+        if await UserReel.find_one(UserReel.message_id == message_id):
             return
+
         payload = attachment.get("payload", {})
-        await Reel(
-            user_id=user_id,
-            sender_ig_id=sender_ig_id,
-            message_id=message_id,
-            reel_video_id=payload.get("reel_video_id"),
-            url=payload.get("url"),
-            caption=payload.get("title"),
-        ).insert()
+        reel_video_id = payload.get("reel_video_id")
+
+        # Reels get shared by many users — reuse the existing content
+        # (and skip re-downloading/re-transcribing) whenever this exact
+        # reel_video_id has already been fully processed.
+        reel = await Reel.find_one(Reel.reel_video_id == reel_video_id) if reel_video_id else None
+        needs_processing = reel is None or reel.status != "transcribed"
+        if reel is None:
+            reel = Reel(reel_video_id=reel_video_id, url=payload.get("url"), caption=payload.get("title"))
+            await reel.insert()
+
+        # Same user re-sharing a reel they've already shared doesn't need a
+        # second user_reels row either.
+        user_reel = await UserReel.find_one(UserReel.user_id == user_id, UserReel.reel_id == str(reel.id))
+        if user_reel is None:
+            user_reel = UserReel(
+                user_id=user_id, reel_id=str(reel.id), sender_ig_id=sender_ig_id, message_id=message_id
+            )
+            await user_reel.insert()
+
+        if needs_processing:
+            reel.status = "queued"
+            await reel.save()
+            get_queue().enqueue(process_reel, str(reel.id), retry=Retry(max=3))
+        else:
+            # Reel's content pipeline already finished — no process_reel run
+            # will happen to trigger this user's own task generation, so
+            # kick it off directly. Also self-heals a previously-failed
+            # generation (e.g. user just added their Gemini key) since
+            # generate_task_async no-ops if a GeneratedTask already exists.
+            get_queue().enqueue(generate_task, str(user_reel.id), retry=Retry(max=3))
+        return
 
 
 async def _try_verify_code(sender_id: str, event: dict[str, Any]) -> bool:
@@ -121,7 +152,7 @@ async def _handle_messaging_event(event: dict[str, Any]) -> None:
         logger.info("unlinked sender_id=%s, ignoring", sender_id)
         return
 
-    await _store_reel_if_any(account.user_id, sender_id, event)
+    await _record_reel_share(account.user_id, sender_id, event)
 
 
 @router.post("")

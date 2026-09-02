@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     meta_app_secret: str
     webhook_verify_token: str
     instagram_bot_access_token: str
+    whisper_model_path: str = "models/ggml-large-v3-turbo.bin"
 
 
 settings = Settings()
