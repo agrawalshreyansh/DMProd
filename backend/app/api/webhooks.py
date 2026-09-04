@@ -14,6 +14,7 @@ from app.models.webhook_event_log import WebhookEventLog
 from app.queue import get_queue
 from app.services.instagram_profile import fetch_username
 from app.services.webhook_security import verify_signature
+from app.workers.comment_unlock import try_fulfill_from_dm
 from app.workers.process_reel import process_reel
 from app.workers.task_generation import generate_task
 
@@ -148,6 +149,13 @@ async def _handle_messaging_event(event: dict[str, Any]) -> None:
 
     if account is None:
         if sender_id and await _try_verify_code(sender_id, event):
+            return
+        # Phase 9: an unrecognized sender might be a creator (or their DM
+        # automation) answering a "comment X for DM" trigger this bot
+        # posted earlier — check before giving up on them. Handles both a
+        # plain-text reply and the "generic template" card shape DM-
+        # automation tools (e.g. SuperProfile.bio) actually send.
+        if await try_fulfill_from_dm(message):
             return
         logger.info("unlinked sender_id=%s, ignoring", sender_id)
         return

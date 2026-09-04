@@ -1,23 +1,23 @@
 @import "tailwindcss";
 
 /*
-  Design direction: "deep water / signal intelligence."
-  Dolphin AI reads reels (sound) and turns them into structured tasks —
-  echolocation is the literal metaphor: a signal goes out, comes back
-  decoded. Dark, blue-black "deep water" base; a bioluminescent teal
-  (--accent-signal) for anything live/active; a warm coral (--accent-warm)
-  reserved for completed/highlighted states, so the palette isn't a single
-  neon-on-black note.
+  Design direction: black and green, on request — not the navy/teal "deep
+  water" palette this used to be. Ground is genuinely near-black (not
+  blue-black), with a faint green undertone so it reads as *this app's*
+  black rather than a generic dark-mode gray. --accent-signal is a real
+  green (terminal/phosphor register, not a teal/mint hedge) for anything
+  live/active. --accent-warm stays a distinct warm color, kept specifically
+  so error/failed states never get confused with the green success color.
 */
 :root {
-  --background: #0b1220;
-  --background-elevated: #121b2e;
-  --background-elevated-2: #1a2540;
-  --border: #26324d;
-  --foreground: #eaf2f7;
-  --foreground-muted: #92a3bd;
-  --accent-signal: #2de2c3;
-  --accent-signal-dim: #1f9c88;
+  --background: #050605;
+  --background-elevated: #121812;
+  --background-elevated-2: #1e281e;
+  --border: #2e3a2e;
+  --foreground: #f1f5f1;
+  --foreground-muted: #93a893;
+  --accent-signal: #22e57e;
+  --accent-signal-dim: #17994f;
   --accent-warm: #ff8a5c;
 }
 

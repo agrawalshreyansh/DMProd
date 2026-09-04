@@ -43,10 +43,10 @@ def download_reel(reel: Reel, dest_dir: Path) -> Path:
         "noprogress": True,
     }
 
-    def _run() -> Path:
+    def _run() -> tuple[Path, dict]:
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(reel.url, download=True)
-            return Path(ydl.prepare_filename(info))
+            return Path(ydl.prepare_filename(info)), info
 
     start = time.monotonic()
     # ponytail: a timed-out download keeps running in its thread until it
@@ -55,11 +55,16 @@ def download_reel(reel: Reel, dest_dir: Path) -> Path:
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(_run)
         try:
-            path = future.result(timeout=DOWNLOAD_TIMEOUT_SECONDS)
+            path, info = future.result(timeout=DOWNLOAD_TIMEOUT_SECONDS)
         except FutureTimeoutError as exc:
             raise ReelDownloadError(f"download timed out after {DOWNLOAD_TIMEOUT_SECONDS}s") from exc
         except Exception as exc:
             raise ReelDownloadError(str(exc)) from exc
+
+    # Phase 9 (comment-to-unlock): the creator's username, needed later to
+    # follow/unfollow via instagrapi — caller's existing `reel.save()` after
+    # this call persists it, no extra write needed here.
+    reel.creator_username = info.get("channel") or None
 
     if not path.exists():
         raise ReelDownloadError("yt-dlp reported success but no file was written")

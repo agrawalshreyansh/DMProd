@@ -5,11 +5,11 @@ from beanie import Document
 from pydantic import Field
 from pymongo import IndexModel
 
-# ponytail: only "notion" exists (Phase 8 scope is Notion-only). Add
-# "google_calendar"/"google_sheet" here when those land — dispatch in
-# app/workers/push.py stays a plain if/elif per type, no plugin registry
-# needed for this few entries.
-IntegrationType = Literal["notion"]
+# ponytail: only "notion"/"google_calendar" exist so far. Add
+# "google_sheet" here when that lands — dispatch in app/workers/push.py
+# stays a plain if/elif per type, no plugin registry needed for this few
+# entries.
+IntegrationType = Literal["notion", "google_calendar"]
 
 
 class Integration(Document):

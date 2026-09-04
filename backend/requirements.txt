@@ -12,3 +12,4 @@ httpx==0.28.1
 rq==2.11.0
 redis==8.1.0
 notion-client==3.1.0
+instagrapi==2.18.18

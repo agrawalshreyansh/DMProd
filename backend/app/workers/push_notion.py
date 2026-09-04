@@ -4,6 +4,22 @@ from app.models.generated_task import GeneratedTask
 from app.models.integration import Integration
 from app.services.credentials import CredentialService
 
+# Labels for the "Status"/"Task Type" select columns connect_notion offers to
+# auto-create. Shared with app/api/integrations.py so the options it creates
+# match exactly what push_to_notion writes into them.
+STATUS_LABELS: dict[str, str] = {
+    "not_started": "Not started",
+    "in_progress": "In progress",
+    "completed": "Completed",
+}
+TASK_TYPE_LABELS: dict[str, str] = {
+    "content_idea": "Content idea",
+    "action_item": "Action item",
+    "event_reminder": "Event reminder",
+    "resource_reference": "Resource reference",
+    "other": "Other",
+}
+
 
 class NotionPushError(Exception):
     pass
@@ -14,6 +30,36 @@ def _find_property(properties: dict, prop_type: str) -> str | None:
         if schema.get("type") == prop_type:
             return name
     return None
+
+
+def _named_select_property(properties: dict, name: str) -> str | None:
+    """Only matches if `name` exists AND is actually a select column — never
+    writes a select value into some other property type that happens to
+    share the name (e.g. a pre-existing "Status" of Notion's native `status`
+    type, which needs a differently-shaped value)."""
+    return name if properties.get(name, {}).get("type") == "select" else None
+
+
+# Notion truncates a single rich_text content string beyond this length -
+# the property is a grid-view-visible preview, the page body (_build_children,
+# no length limit applied there) stays the full text either way.
+DESCRIPTION_PROPERTY_MAX_LEN = 2000
+
+
+async def _ensure_description_property(client: AsyncClient, data_source_id: str, properties: dict) -> str | None:
+    """The task's description/key_points already land in the page body
+    (_build_children), but a database's default grid view only shows
+    *properties* as columns - body content is invisible until a page is
+    opened. Mirrors app.api.integrations._ensure_task_schema's create-if-
+    missing pattern, just run here instead so it also self-heals for a
+    database connected before this property existed, not only fresh ones.
+    Returns None (skip setting it) if "Description" exists as some other
+    property type - never overwrite an unrelated existing column."""
+    if "Description" in properties:
+        return "Description" if properties["Description"].get("type") == "rich_text" else None
+
+    await client.data_sources.update(data_source_id, properties={"Description": {"rich_text": {}}})
+    return "Description"
 
 
 def _text_block(block_type: str, content: str) -> dict:
@@ -40,8 +86,27 @@ def _build_children(task: GeneratedTask) -> list[dict]:
     return children
 
 
-async def push_to_notion(task: GeneratedTask, integration: Integration) -> str:
-    """Creates a page in the user's configured Notion database for `task`.
+async def _replace_children(client: AsyncClient, page_id: str, children: list[dict]) -> None:
+    """Swaps a page's body blocks for `children` - Notion has no
+    "replace children" call, only list/delete/append, so an update clears
+    the old blocks first rather than appending on top of them (which would
+    just accumulate duplicate content on every re-push)."""
+    existing = await client.blocks.children.list(block_id=page_id)
+    for block in existing.get("results", []):
+        await client.blocks.delete(block_id=block["id"])
+    if children:
+        await client.blocks.children.append(block_id=page_id, children=children)
+
+
+async def push_to_notion(
+    task: GeneratedTask, integration: Integration, existing_page_id: str | None = None
+) -> tuple[str, str]:
+    """Creates a page in the user's configured Notion database for `task`,
+    or - when `existing_page_id` is given (a prior successful push for this
+    task, per `push_task`'s PushLog lookup) - updates that page in place
+    instead of creating a second one. Returns (url, page_id); the id is
+    what a later re-push needs to update this same page again.
+
     Raises NotionPushError on any failure — caller (push_task) is the one
     that logs it to `push_logs`."""
     secret = await CredentialService.get(task.user_id, "notion")
@@ -74,11 +139,41 @@ async def push_to_notion(task: GeneratedTask, integration: Integration) -> str:
                     "date": {"start": task.due_date.date().isoformat()}
                 }
 
-        page = await client.pages.create(
-            parent={"type": "data_source_id", "data_source_id": data_source_id},
-            properties=properties,
-            children=_build_children(task),
-        )
+        status_property = _named_select_property(properties_schema, "Status")
+        if status_property is not None:
+            properties[status_property] = {
+                "select": {"name": STATUS_LABELS.get(task.status, task.status)}
+            }
+
+        task_type_property = _named_select_property(properties_schema, "Task Type")
+        if task_type_property is not None:
+            properties[task_type_property] = {
+                "select": {"name": TASK_TYPE_LABELS.get(task.task_type, task.task_type)}
+            }
+
+        if task.details.description:
+            description_property = await _ensure_description_property(
+                client, data_source_id, properties_schema
+            )
+            if description_property is not None:
+                properties[description_property] = {
+                    "rich_text": [
+                        {
+                            "type": "text",
+                            "text": {"content": task.details.description[:DESCRIPTION_PROPERTY_MAX_LEN]},
+                        }
+                    ]
+                }
+
+        if existing_page_id is not None:
+            page = await client.pages.update(page_id=existing_page_id, properties=properties)
+            await _replace_children(client, existing_page_id, _build_children(task))
+        else:
+            page = await client.pages.create(
+                parent={"type": "data_source_id", "data_source_id": data_source_id},
+                properties=properties,
+                children=_build_children(task),
+            )
     except NotionPushError:
         raise
     except Exception as exc:
@@ -87,6 +182,7 @@ async def push_to_notion(task: GeneratedTask, integration: Integration) -> str:
         await client.aclose()
 
     url = page.get("url")
-    if not url:
-        raise NotionPushError("Notion did not return a page URL")
-    return url
+    page_id = page.get("id")
+    if not url or not page_id:
+        raise NotionPushError("Notion did not return a page URL/id")
+    return url, page_id

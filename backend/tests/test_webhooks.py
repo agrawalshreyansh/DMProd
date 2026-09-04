@@ -324,3 +324,48 @@ async def test_dm_with_unknown_code_does_not_link(client):
     )
     assert resp.status_code == 200
     assert await InstagramAccount.find_all().to_list() == []
+
+
+async def test_unlinked_dm_fulfills_a_pending_comment_unlock_request(client, monkeypatch):
+    from app.models.comment_unlock_request import CommentUnlockRequest
+    from app.models.generated_task import GeneratedTask, TaskDetails
+    from app.models.reel import Reel
+
+    reel = await Reel(reel_video_id="v1", url="https://www.instagram.com/reel/abc/").insert()
+    request = await CommentUnlockRequest(
+        reel_id=str(reel.id), creator_username="creator1", keyword="YES"
+    ).insert()
+    task = await GeneratedTask(
+        user_id="user-1",
+        reel_id=str(reel.id),
+        task_type="resource_reference",
+        title="t1",
+        details=TaskDetails(),
+        raw_llm_response="{}",
+    ).insert()
+
+    body = json.dumps(
+        _text_message_payload("9876543210", "Here's the link: https://example.com/guide")
+    ).encode()
+    resp = await client.post(
+        "/webhooks/instagram",
+        content=body,
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": sign_payload(body)},
+    )
+
+    assert resp.status_code == 200
+    updated_request = await CommentUnlockRequest.get(request.id)
+    assert updated_request.status == "fulfilled"
+    assert updated_request.reply_message_id == "text-message-id"
+    updated_task = await GeneratedTask.get(task.id)
+    assert updated_task.details.link == "https://example.com/guide"
+
+
+async def test_unlinked_dm_with_no_pending_request_is_just_ignored(client):
+    body = json.dumps(_text_message_payload("9876543210", "random text, nothing pending")).encode()
+    resp = await client.post(
+        "/webhooks/instagram",
+        content=body,
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": sign_payload(body)},
+    )
+    assert resp.status_code == 200

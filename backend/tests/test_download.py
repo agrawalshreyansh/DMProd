@@ -56,6 +56,28 @@ def test_download_reel_success_writes_file_and_returns_its_path(tmp_path, monkey
     assert path.read_bytes() == b"fake video bytes"
 
 
+def test_download_reel_captures_creator_username_from_info_dict(tmp_path, monkeypatch):
+    class _FakeYoutubeDLWithChannel(_FakeYoutubeDL):
+        def extract_info(self, url, download=True):
+            return {"id": "abc123", "ext": "mp4", "channel": "cyberbuddyshivam"}
+
+    monkeypatch.setattr(download_module, "YoutubeDL", _FakeYoutubeDLWithChannel)
+    reel = Reel(url="https://www.instagram.com/reel/abc123/")
+
+    download_reel(reel, tmp_path)
+
+    assert reel.creator_username == "cyberbuddyshivam"
+
+
+def test_download_reel_leaves_creator_username_none_when_absent(tmp_path, monkeypatch):
+    monkeypatch.setattr(download_module, "YoutubeDL", _FakeYoutubeDL)
+    reel = Reel(url="https://www.instagram.com/reel/abc123/")
+
+    download_reel(reel, tmp_path)
+
+    assert reel.creator_username is None
+
+
 def test_download_reel_raises_on_resolution_failure(tmp_path, monkeypatch):
     def _raising_youtubedl(opts):
         return _FailingYoutubeDL(opts, "Unsupported URL")

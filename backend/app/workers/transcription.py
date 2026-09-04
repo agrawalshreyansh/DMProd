@@ -76,7 +76,13 @@ def transcribe_audio(audio_path: Path) -> TranscriptionResult:
         if not json_path.exists():
             raise TranscriptionError("whisper-cli reported success but no output was written")
 
-        data = json.loads(json_path.read_text())
+        # whisper.cpp can split a multi-byte UTF-8 character across a
+        # segment/token boundary in its JSON output for non-Latin scripts
+        # (confirmed in practice on Hinglish audio — see module docstring
+        # above on why that's the primary use case here) — read_text()'s
+        # strict decode then crashes the whole pipeline over one bad byte.
+        # Matches the errors="replace" already used for stderr above.
+        data = json.loads(json_path.read_bytes().decode(errors="replace"))
 
     segments = data.get("transcription", [])
     raw_text = " ".join(seg.get("text", "") for seg in segments)

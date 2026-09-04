@@ -13,35 +13,43 @@ beforeEach(() => {
   global.fetch = jest.fn();
 });
 
-test("checks the box for task types already routed to notion", () => {
-  render(<TaskRoutingForm initialRouting={{ action_item: "notion", content_idea: null }} />);
-  expect(screen.getByRole("checkbox", { name: /action item/i })).toBeChecked();
-  expect(screen.getByRole("checkbox", { name: /content idea/i })).not.toBeChecked();
+test("shows the destination already routed for each task type", () => {
+  render(
+    <TaskRoutingForm
+      initialRouting={{ action_item: "notion", event_reminder: "google_calendar", content_idea: null }}
+    />,
+  );
+  expect(screen.getByRole("combobox", { name: /action item/i })).toHaveValue("notion");
+  expect(screen.getByRole("combobox", { name: /event reminder/i })).toHaveValue("google_calendar");
+  expect(screen.getByRole("combobox", { name: /content idea/i })).toHaveValue("");
 });
 
-test("checking a box saves the full updated routing and refreshes", async () => {
+test("selecting a destination saves the full updated routing and refreshes", async () => {
   (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, json: async () => ({}) });
 
   render(<TaskRoutingForm initialRouting={{ action_item: null, content_idea: "notion" }} />);
-  await userEvent.click(screen.getByRole("checkbox", { name: /action item/i }));
+  await userEvent.selectOptions(
+    screen.getByRole("combobox", { name: /action item/i }),
+    "google_calendar",
+  );
 
   expect(global.fetch).toHaveBeenCalledWith(
     "/api/preferences",
     expect.objectContaining({
       method: "PUT",
       body: JSON.stringify({
-        task_type_routing: { action_item: "notion", content_idea: "notion" },
+        task_type_routing: { action_item: "google_calendar", content_idea: "notion" },
       }),
     }),
   );
   expect(refresh).toHaveBeenCalled();
 });
 
-test("unchecking a box routes that task type to null", async () => {
+test("selecting Don't push routes that task type to null", async () => {
   (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: true, json: async () => ({}) });
 
   render(<TaskRoutingForm initialRouting={{ action_item: "notion" }} />);
-  await userEvent.click(screen.getByRole("checkbox", { name: /action item/i }));
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: /action item/i }), "");
 
   expect(global.fetch).toHaveBeenCalledWith(
     "/api/preferences",
@@ -51,13 +59,13 @@ test("unchecking a box routes that task type to null", async () => {
   );
 });
 
-test("reverts the checkbox and shows an error if saving fails", async () => {
+test("reverts the selection and shows an error if saving fails", async () => {
   (global.fetch as jest.Mock).mockResolvedValueOnce({ ok: false, json: async () => ({}) });
 
   render(<TaskRoutingForm initialRouting={{ action_item: null }} />);
-  await userEvent.click(screen.getByRole("checkbox", { name: /action item/i }));
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: /action item/i }), "notion");
 
   expect(await screen.findByText(/could not save routing/i)).toBeInTheDocument();
-  expect(screen.getByRole("checkbox", { name: /action item/i })).not.toBeChecked();
+  expect(screen.getByRole("combobox", { name: /action item/i })).toHaveValue("");
   expect(refresh).not.toHaveBeenCalled();
 });

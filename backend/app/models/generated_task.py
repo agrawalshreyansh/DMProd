@@ -33,6 +33,12 @@ class GeneratedTask(Document):
     title: str
     details: TaskDetails
     due_date: datetime | None = None
+    # How many days before due_date the calendar push should schedule its
+    # reminder for (0 = same day) — Gemini's call, made once at generation
+    # time alongside task_type/title (see task_generation.py's system
+    # instruction), since it needs the same reel context. Meaningless
+    # without a due_date.
+    reminder_lead_days: int = 0
     status: TaskStatus = "not_started"
     raw_llm_response: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

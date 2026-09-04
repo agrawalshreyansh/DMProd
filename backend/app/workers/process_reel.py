@@ -14,6 +14,7 @@ from app.workers.audio import AudioExtractionError, extract_audio
 from app.workers.download import ReelDownloadError, download_reel
 from app.workers.task_generation import generate_task
 from app.workers.transcription import TranscriptionError, transcribe_audio
+from app.workers.visual_analysis import analyze_visuals
 
 logger = logging.getLogger("worker.process_reel")
 
@@ -92,6 +93,13 @@ async def _run_pipeline(reel: Reel, tmp_dir: Path) -> None:
         len(result.text),
         result.duration_seconds,
     )
+
+    # Phase 13: keyframe extraction + Gemini vision, on the same downloaded
+    # video file while it's still on disk. Never raises - a visual-analysis
+    # failure only downgrades `visual_processing_status`, it never blocks
+    # this (already working) transcript-driven flow.
+    analyze_visuals(reel, video_path, tmp_dir)
+
     reel.status = "transcribed"
     await reel.save()
 

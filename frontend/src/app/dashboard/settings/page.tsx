@@ -1,3 +1,4 @@
+import DashboardPageHeader from "@/components/DashboardPageHeader";
 import { getToken } from "@/lib/session";
 import { backendFetch } from "@/lib/api";
 import GeminiKeyForm from "@/components/GeminiKeyForm";
@@ -9,7 +10,11 @@ export default async function SettingsPage() {
 
   return (
     <div className="flex max-w-md flex-col gap-4">
-      <h1 className="font-display text-xl font-semibold">Settings</h1>
+      <DashboardPageHeader
+        eyebrow="SIG.07"
+        title="Settings"
+        description="Your own Gemini API key — used to structure every reel you share, never shared across users."
+      />
       <GeminiKeyForm initiallyConnected={connected} initialMaskedKey={masked_key ?? null} />
     </div>
   );

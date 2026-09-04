@@ -1,10 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { TASK_TYPE_LABELS } from "@/lib/types";
 
 const TASK_TYPES = Object.keys(TASK_TYPE_LABELS);
+
+const ROUTE_OPTIONS = [
+  { value: "", label: "Don't push" },
+  { value: "notion", label: "Notion" },
+  { value: "google_calendar", label: "Google Calendar" },
+] as const;
 
 export default function TaskRoutingForm({
   initialRouting,
@@ -16,9 +22,10 @@ export default function TaskRoutingForm({
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function toggle(taskType: string, checked: boolean) {
+  async function onChange(taskType: string, e: ChangeEvent<HTMLSelectElement>) {
+    const value = e.target.value || null;
     const previous = routing;
-    const next = { ...routing, [taskType]: checked ? "notion" : null };
+    const next = { ...routing, [taskType]: value };
     setRouting(next);
     setSaving(taskType);
     setError(null);
@@ -46,7 +53,7 @@ export default function TaskRoutingForm({
         <thead>
           <tr className="text-left text-foreground-muted">
             <th className="pb-2 font-medium">Task type</th>
-            <th className="pb-2 font-medium">Push to Notion</th>
+            <th className="pb-2 font-medium">Push to</th>
           </tr>
         </thead>
         <tbody>
@@ -54,14 +61,19 @@ export default function TaskRoutingForm({
             <tr key={taskType} className="border-t border-border">
               <td className="py-2 text-foreground">{TASK_TYPE_LABELS[taskType]}</td>
               <td className="py-2">
-                <input
-                  type="checkbox"
-                  aria-label={`Push ${TASK_TYPE_LABELS[taskType]} to Notion`}
-                  checked={routing[taskType] === "notion"}
+                <select
+                  aria-label={`Where to push ${TASK_TYPE_LABELS[taskType]}`}
+                  value={routing[taskType] ?? ""}
                   disabled={saving === taskType}
-                  onChange={(e) => toggle(taskType, e.target.checked)}
-                  className="h-4 w-4 accent-accent-signal"
-                />
+                  onChange={(e) => onChange(taskType, e)}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-foreground outline-none focus:border-accent-signal focus:ring-1 focus:ring-accent-signal disabled:opacity-50"
+                >
+                  {ROUTE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
               </td>
             </tr>
           ))}

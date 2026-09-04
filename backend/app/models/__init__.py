@@ -1,3 +1,4 @@
+from app.models.comment_unlock_request import CommentUnlockRequest
 from app.models.generated_task import GeneratedTask
 from app.models.instagram_account import InstagramAccount
 from app.models.integration import Integration
@@ -22,6 +23,7 @@ document_models = [
     GeneratedTask,
     Integration,
     PushLog,
+    CommentUnlockRequest,
 ]
 
 __all__ = [
@@ -36,5 +38,6 @@ __all__ = [
     "GeneratedTask",
     "Integration",
     "PushLog",
+    "CommentUnlockRequest",
     "document_models",
 ]

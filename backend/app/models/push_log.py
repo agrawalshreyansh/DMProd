@@ -16,6 +16,11 @@ class PushLog(Document):
     integration_type: str
     status: PushStatus
     external_ref_url: str | None = None
+    # The provider's own id for the pushed record (Notion page id / Google
+    # Calendar event id) - looked up on a re-push (e.g. Phase 9 enriching a
+    # task after a comment-unlock DM reply) so push_task updates the
+    # existing record in place instead of creating a duplicate.
+    external_ref_id: str | None = None
     error_message: str | None = None
     pushed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

@@ -1,3 +1,4 @@
+import DashboardPageHeader from "@/components/DashboardPageHeader";
 import { getToken } from "@/lib/session";
 import { backendFetch, requireJson } from "@/lib/api";
 import TasksTable from "@/components/TasksTable";
@@ -10,7 +11,7 @@ export default async function TasksPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="font-display text-xl font-semibold">Tasks</h1>
+      <DashboardPageHeader eyebrow="SIG.05" title="Tasks" />
 
       {tasks.length === 0 ? (
         <p className="text-sm leading-relaxed text-foreground-muted">

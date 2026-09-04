@@ -3,17 +3,7 @@ import Link from "next/link";
 import { getToken } from "@/lib/session";
 import LogoutButton from "@/components/LogoutButton";
 import Wordmark from "@/components/Wordmark";
-
-const NAV = [
-  { href: "/dashboard", label: "Overview" },
-  { href: "/dashboard/instagram", label: "Instagram Account" },
-  { href: "/dashboard/integrations", label: "Integrations" },
-  { href: "/dashboard/preferences", label: "Preferences" },
-  { href: "/dashboard/history", label: "History" },
-  { href: "/dashboard/tasks", label: "Tasks" },
-  { href: "/dashboard/stats", label: "Stats" },
-  { href: "/dashboard/settings", label: "Settings" },
-];
+import SidebarNav from "@/components/SidebarNav";
 
 export default async function DashboardLayout({
   children,
@@ -36,21 +26,12 @@ export default async function DashboardLayout({
         <span className="mb-2 font-mono text-xs uppercase tracking-widest text-foreground-muted">
           Menu
         </span>
-        <ul className="flex flex-col gap-0.5 text-sm">
-          {NAV.map((item) => (
-            <li key={item.href}>
-              <Link
-                href={item.href}
-                className="block rounded-md px-2 py-1.5 text-foreground-muted transition hover:bg-background-elevated-2 hover:text-foreground"
-              >
-                {item.label}
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <SidebarNav />
         <LogoutButton />
       </nav>
-      <main className="flex-1 p-10">{children}</main>
+      <main className="flex-1 overflow-y-auto p-10">
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">{children}</div>
+      </main>
     </div>
   );
 }
