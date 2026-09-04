@@ -20,8 +20,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Dolphin AI",
-  description: "Dolphin AI turns reels you share into tasks — in Notion, your calendar, or a sheet.",
+  metadataBase: new URL("https://usepanda.tech"),
+  title: "Panda",
+  description: "Panda turns reels you share into tasks — in Notion or your calendar.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

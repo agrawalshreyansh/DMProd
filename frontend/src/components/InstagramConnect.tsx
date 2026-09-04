@@ -94,7 +94,7 @@ export default function InstagramConnect({
         <div className="flex flex-col gap-2">
           <p className="text-sm leading-relaxed text-foreground-muted">
             From the Instagram account you want to connect, DM this code to
-            Dolphin AI&apos;s Instagram account:
+            Panda&apos;s Instagram account:
           </p>
           <p className="w-fit rounded-md bg-background px-4 py-2 font-mono text-2xl font-semibold tracking-[0.3em] text-accent-signal">
             {code}

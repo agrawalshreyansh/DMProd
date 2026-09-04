@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PolicyPage, Section, List } from "@/components/PolicyPage";
 
 export const metadata = {
-  title: "Terms of Service — Dolphin AI",
+  title: "Terms of Service — Panda",
 };
 
 // ponytail: [PLACEHOLDER] — same contact email as the privacy policy,
@@ -10,14 +10,14 @@ export const metadata = {
 // plain-language ToS appropriate for an early-stage product, not a
 // substitute for a lawyer's review before real signups/revenue depend on it.
 const EFFECTIVE_DATE = "August 23, 2026";
-const CONTACT_EMAIL = "privacy@dolphinai.app";
+const CONTACT_EMAIL = "privacy@usepanda.tech";
 
 export default function TermsOfServicePage() {
   return (
     <PolicyPage title="Terms of Service" effectiveDate={EFFECTIVE_DATE}>
       <Section title="Agreement">
         <p>
-          By creating a Dolphin AI account or connecting your Instagram
+          By creating a Panda account or connecting your Instagram
           account to our bot, you agree to these terms. If you don&apos;t
           agree, don&apos;t use the service.
         </p>
@@ -25,7 +25,7 @@ export default function TermsOfServicePage() {
 
       <Section title="What the service does">
         <p>
-          Dolphin AI receives reels you share with our Instagram bot
+          Panda receives reels you share with our Instagram bot
           account, processes them into structured tasks using your own
           Google Gemini API key, and pushes the results to destinations you
           configure (Notion, Google Calendar, Google Sheets). You can also
@@ -36,7 +36,7 @@ export default function TermsOfServicePage() {
       <Section title="Your account">
         <List
           items={[
-            ["Eligibility", "you need to be able to form a binding contract in your jurisdiction to use Dolphin AI."],
+            ["Eligibility", "you need to be able to form a binding contract in your jurisdiction to use Panda."],
             ["Accuracy", "keep your account email and connected-account details accurate."],
             ["Security", "you're responsible for keeping your password and API keys confidential — anyone with access to your account can act as you within the service."],
           ]}
@@ -58,7 +58,7 @@ export default function TermsOfServicePage() {
         <p>You agree not to:</p>
         <ul className="flex list-disc flex-col gap-1.5 pl-5">
           <li>Share reels or content you don&apos;t have the right to share with us</li>
-          <li>Use Dolphin AI to process content that violates Instagram&apos;s or Meta&apos;s own terms</li>
+          <li>Use Panda to process content that violates Instagram&apos;s or Meta&apos;s own terms</li>
           <li>Attempt to disrupt, overload, or reverse-engineer the service</li>
           <li>Use another person&apos;s account or Instagram connection without permission</li>
         </ul>
@@ -66,7 +66,7 @@ export default function TermsOfServicePage() {
 
       <Section title="Third-party services">
         <p>
-          Dolphin AI depends on Meta/Instagram, Google Gemini, and — where
+          Panda depends on Meta/Instagram, Google Gemini, and — where
           you connect them — Notion, Google Calendar, and Google Sheets.
           We&apos;re not responsible for outages, policy changes, or content
           decisions made by those services. See our{" "}
@@ -79,7 +79,7 @@ export default function TermsOfServicePage() {
 
       <Section title="Termination">
         <p>
-          You can stop using Dolphin AI and request account deletion at any
+          You can stop using Panda and request account deletion at any
           time — see{" "}
           <Link href="/data-deletion" className="text-accent-signal underline underline-offset-2">
             Data Deletion
@@ -91,7 +91,7 @@ export default function TermsOfServicePage() {
 
       <Section title="No warranty">
         <p>
-          Dolphin AI is provided &ldquo;as is,&rdquo; without warranties of
+          Panda is provided &ldquo;as is,&rdquo; without warranties of
           any kind. We don&apos;t guarantee the accuracy of transcripts or
           generated tasks — always check what gets pushed to your Notion,
           Calendar, or Sheet before relying on it.

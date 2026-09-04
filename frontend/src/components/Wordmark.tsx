@@ -4,7 +4,7 @@ export default function Wordmark({ className = "" }: { className?: string }) {
       <span className="relative flex h-2 w-2">
         <span className="absolute inline-flex h-full w-full animate-ping-dot rounded-full bg-accent-signal" />
       </span>
-      Dolphin AI
+      Panda
     </span>
   );
 }

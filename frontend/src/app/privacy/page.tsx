@@ -2,21 +2,21 @@ import Link from "next/link";
 import { PolicyPage, Section, List } from "@/components/PolicyPage";
 
 export const metadata = {
-  title: "Privacy Policy — Dolphin AI",
+  title: "Privacy Policy — Panda",
 };
 
 // ponytail: [PLACEHOLDER] markers below are the only things that need a
 // real value before this goes in front of Meta's reviewers or real users —
 // legal entity name, contact email, and effective date once it's final.
 const EFFECTIVE_DATE = "August 23, 2026";
-const CONTACT_EMAIL = "privacy@dolphinai.app"; // [PLACEHOLDER] replace with a real inbox you control
+const CONTACT_EMAIL = "privacy@usepanda.tech"; // [PLACEHOLDER] replace with a real inbox you control
 
 export default function PrivacyPolicyPage() {
   return (
     <PolicyPage title="Privacy Policy" effectiveDate={EFFECTIVE_DATE}>
       <Section title="Overview">
         <p>
-          Dolphin AI (&ldquo;we&rdquo;, &ldquo;us&rdquo;) is a service that
+          Panda (&ldquo;we&rdquo;, &ldquo;us&rdquo;) is a service that
           lets you share Instagram reels with our bot account and turns them
           into structured tasks — pushed to destinations like Notion, Google
           Calendar, or Google Sheets that you configure. This policy explains
@@ -29,11 +29,11 @@ export default function PrivacyPolicyPage() {
           items={[
             [
               "Account information",
-              "The email address and password (stored as a salted hash, never in plain text) you use to sign up for the Dolphin AI dashboard.",
+              "The email address and password (stored as a salted hash, never in plain text) you use to sign up for the Panda dashboard.",
             ],
             [
               "Instagram account information",
-              "When you connect your Instagram account, we store your Instagram user ID and username so we can match reels you send our bot to your Dolphin AI account. We do not store your Instagram password — connection happens through Instagram's own login flow.",
+              "When you connect your Instagram account, we store your Instagram user ID and username so we can match reels you send our bot to your Panda account. We do not store your Instagram password — connection happens through Instagram's own login flow.",
             ],
             [
               "Content you send us",
@@ -53,7 +53,7 @@ export default function PrivacyPolicyPage() {
 
       <Section title="How we use your information">
         <p>
-          We use the information above solely to operate Dolphin AI: to
+          We use the information above solely to operate Panda: to
           identify you, to process reels you send us into structured tasks,
           and to deliver those tasks to the destinations you choose. We do
           not sell your information, and we do not use your content to train
@@ -91,7 +91,7 @@ export default function PrivacyPolicyPage() {
         <p>
           API keys and third-party access tokens are encrypted at rest.
           Passwords are hashed, never stored in plain text. Access to your
-          data is limited to what Dolphin AI&apos;s own systems need to
+          data is limited to what Panda&apos;s own systems need to
           operate the service.
         </p>
       </Section>
