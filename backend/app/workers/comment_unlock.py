@@ -114,36 +114,70 @@ async def _oldest_pending(now: datetime) -> CommentUnlockRequest | None:
     return None
 
 
+def _first_url(obj: object) -> str | None:
+    """First http(s) URL found anywhere in a nested dict/list/string. DM-
+    automation tools and IG itself bury the real link at inconsistent
+    depths (button URL, `payload.url`, a redirect wrapper, plain text in a
+    card title), so a structural walk beats hardcoding every nest."""
+    if isinstance(obj, str):
+        match = _URL_RE.search(obj)
+        return _safe_url(match.group(0)) if match else None
+    if isinstance(obj, dict):
+        for value in obj.values():
+            found = _first_url(value)
+            if found:
+                return found
+    if isinstance(obj, list):
+        for value in obj:
+            found = _first_url(value)
+            if found:
+                return found
+    return None
+
+
 def _extract_reply_content(message: dict) -> tuple[str, str | None] | None:
     """(display_text, explicit_link) from a DM's message payload, or None
-    if the shape isn't one we understand yet.
+    when it carries no usable text or URL at all.
 
-    Plain `message.text` is one shape. The other — confirmed against a
-    real reply from a creator's DM-automation tool (SuperProfile.bio) —
-    is a Messenger-style "generic template" attachment: a card with a
-    `title` and a button carrying the actual URL. This isn't an edge
-    case; it's likely the *common* shape for "comment X for DM" replies,
-    since most creators run this scheme through exactly this kind of
-    automation rather than typing a reply by hand. The button's URL is
-    pulled directly rather than regexed out of the title text, since the
-    title only shows the button's *label* ("Explore Now!"), not the URL
-    itself."""
-    text = message.get("text")
-    if text:
-        return text, None
+    Shapes seen in the wild:
+    - plain `message.text`
+    - a Messenger-style "generic template" card: `payload.generic.
+      elements[0]` with a `title` and a `buttons[].url` (confirmed against
+      SuperProfile.bio; likely the common shape since most creators run
+      "comment X for DM" through automation, not a hand-typed reply)
+    - a "button template": `buttons` at the payload root
+    - `payload.url` directly on an attachment
+    - a URL buried deeper in the payload (redirect wrappers etc.)
 
-    for attachment in message.get("attachments", []):
-        if attachment.get("type") != "template":
-            continue
-        elements = attachment.get("payload", {}).get("generic", {}).get("elements", [])
-        if not elements:
-            continue
-        element = elements[0]
-        buttons = element.get("buttons", [])
-        link = _safe_url(buttons[0].get("url")) if buttons else None
-        return element.get("title", ""), link
+    The button URL is taken structurally, never regexed out of the title
+    (the title only shows the button's *label*, e.g. "Explore Now!")."""
+    text = (message.get("text") or "").strip()
+    attachments = message.get("attachments") or []
 
-    return None
+    explicit_link: str | None = None
+    title_text = ""
+    for attachment in attachments:
+        payload = attachment.get("payload") or {}
+        elements = payload.get("generic", {}).get("elements", []) if isinstance(payload, dict) else []
+        if elements:
+            element = elements[0]
+            title_text = title_text or element.get("title", "")
+            for button in element.get("buttons", []) or []:
+                explicit_link = explicit_link or _safe_url(button.get("url"))
+        if isinstance(payload, dict):
+            for button in payload.get("buttons", []) or []:
+                explicit_link = explicit_link or _safe_url(button.get("url"))
+            explicit_link = explicit_link or _safe_url(payload.get("url"))
+
+    quick_reply = message.get("quick_reply") or {}
+    explicit_link = explicit_link or _safe_url(quick_reply.get("payload"))
+
+    display_text = text or title_text
+    link = explicit_link or _first_url(attachments)
+
+    if not display_text and not link:
+        return None
+    return display_text, link
 
 
 async def fulfill_comment_unlock(request: CommentUnlockRequest, message: dict) -> None:
@@ -152,9 +186,10 @@ async def fulfill_comment_unlock(request: CommentUnlockRequest, message: dict) -
     itself fans out per user for a shared Reel), re-pushes each, and marks
     the request fulfilled. Doesn't unfollow — that's deliberately not
     automated (see the phase's Risks note), the bot just stays following."""
-    reply_text, explicit_link = _extract_reply_content(message)
+    content = _extract_reply_content(message)
+    reply_text, explicit_link = content if content else ("", None)
     url_match = _URL_RE.search(reply_text)
-    link = explicit_link or (url_match.group(0) if url_match else None)
+    link = explicit_link or (_safe_url(url_match.group(0)) if url_match else None)
     message_id = message.get("mid")
 
     tasks = await GeneratedTask.find(GeneratedTask.reel_id == request.reel_id).to_list()
@@ -170,6 +205,7 @@ async def fulfill_comment_unlock(request: CommentUnlockRequest, message: dict) -
     request.status = "fulfilled"
     request.reply_text = reply_text
     request.reply_message_id = message_id
+    request.reply_raw = message
     request.fulfilled_at = datetime.now(timezone.utc)
     await request.save()
 
@@ -200,11 +236,23 @@ async def try_fulfill_from_dm(message: dict) -> bool:
     ):
         return True  # already processed this exact DM — a Meta redelivery
 
-    if _extract_reply_content(message) is None:
-        return False
-
     request = await _oldest_pending(datetime.now(timezone.utc))
     if request is None:
+        return False
+
+    if _extract_reply_content(message) is None:
+        # A request is pending but this DM carries no text or URL we can
+        # use — IG sometimes delivers CTA/button cards as
+        # type="unsupported" with no payload. Don't consume the request
+        # (a real follow-up reply might still come); log loudly so the raw
+        # payload in webhook_event_logs can be recovered by hand.
+        logger.warning(
+            "comment_unlock: request pending for reel_id=%s but DM mid=%s is unparseable "
+            "(attachment_types=%s) — not fulfilled, recover from webhook_event_logs",
+            request.reel_id,
+            message_id,
+            [a.get("type") for a in message.get("attachments") or []],
+        )
         return False
 
     await fulfill_comment_unlock(request, message)

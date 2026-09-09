@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal
 
 from beanie import Document
 from pydantic import Field
@@ -25,6 +25,10 @@ class CommentUnlockRequest(Document):
     # redelivering the same message and getting matched to a *different*
     # (by then still-pending) request the second time around.
     reply_message_id: str | None = None
+    # The raw DM payload that fulfilled this request — kept for debugging
+    # the many CTA/button shapes IG and DM-automation tools send (some of
+    # which carry the real link at an unpredictable depth, or not at all).
+    reply_raw: dict[str, Any] | None = None
 
     class Settings:
         name = "comment_unlock_requests"

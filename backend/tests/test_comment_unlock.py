@@ -27,6 +27,38 @@ def _template_msg(title: str, url: str | None, mid: str = "mid-1") -> dict:
     }
 
 
+def _button_template_msg(url: str, mid: str = "mid-1") -> dict:
+    # "button template" — buttons at the payload root, no generic.elements
+    return {
+        "mid": mid,
+        "attachments": [
+            {
+                "type": "template",
+                "payload": {
+                    "template_type": "button",
+                    "text": "As promised 👇",
+                    "buttons": [{"type": "web_url", "url": url, "title": "Open"}],
+                },
+            }
+        ],
+    }
+
+
+def _payload_url_msg(url: str, mid: str = "mid-1") -> dict:
+    return {"mid": mid, "attachments": [{"type": "fallback", "payload": {"url": url}}]}
+
+
+def _buried_url_msg(url: str, mid: str = "mid-1") -> dict:
+    return {
+        "mid": mid,
+        "attachments": [{"type": "template", "payload": {"wrapper": {"deep": {"redirect": url}}}}],
+    }
+
+
+def _unsupported_msg(mid: str = "mid-1") -> dict:
+    return {"mid": mid, "attachments": [{"type": "unsupported"}]}
+
+
 def _patch_instagram(monkeypatch, follow_error=None, comment_error=None, calls=None):
     calls = calls if calls is not None else []
 
@@ -221,6 +253,68 @@ async def test_fulfill_handles_template_attachment_from_dm_automation_tools(app,
     assert updated_task.details.link == (
         "https://prod.api.cosmofeed.com/api/adm/tm?url=https%3A%2F%2Fexample.com%2Fguide"
     )
+
+
+async def _task_for(reel):
+    return await GeneratedTask(
+        user_id="user-1",
+        reel_id=str(reel.id),
+        task_type="resource_reference",
+        title="t1",
+        details=TaskDetails(),
+        raw_llm_response="{}",
+    ).insert()
+
+
+@pytest.mark.parametrize(
+    "make_message",
+    [
+        lambda: _button_template_msg("https://example.com/guide"),
+        lambda: _payload_url_msg("https://example.com/guide"),
+        lambda: _buried_url_msg("https://example.com/guide"),
+    ],
+    ids=["button-template", "payload-url", "buried-url"],
+)
+async def test_fulfill_extracts_link_from_varied_dm_shapes(app, monkeypatch, make_message):
+    _patch_instagram(monkeypatch)
+    reel = await _make_reel()
+    await CommentUnlockRequest(reel_id=str(reel.id), creator_username="creator1", keyword="YES").insert()
+    task = await _task_for(reel)
+
+    matched = await try_fulfill_from_dm(make_message())
+
+    assert matched is True
+    updated_task = await GeneratedTask.get(task.id)
+    assert updated_task.details.link == "https://example.com/guide"
+
+
+async def test_fulfill_stores_raw_reply_payload_on_request(app, monkeypatch):
+    _patch_instagram(monkeypatch)
+    reel = await _make_reel()
+    request = await CommentUnlockRequest(
+        reel_id=str(reel.id), creator_username="creator1", keyword="YES"
+    ).insert()
+    await _task_for(reel)
+    message = _button_template_msg("https://example.com/guide")
+
+    await try_fulfill_from_dm(message)
+
+    updated = await CommentUnlockRequest.get(request.id)
+    assert updated.reply_raw == message
+
+
+async def test_unparseable_dm_does_not_consume_pending_request_and_warns(app, monkeypatch, caplog):
+    _patch_instagram(monkeypatch)
+    reel = await _make_reel()
+    await CommentUnlockRequest(reel_id=str(reel.id), creator_username="creator1", keyword="YES").insert()
+
+    with caplog.at_level("WARNING"):
+        matched = await try_fulfill_from_dm(_unsupported_msg())
+
+    assert matched is False
+    request = await CommentUnlockRequest.find_one(CommentUnlockRequest.reel_id == str(reel.id))
+    assert request.status == "pending"
+    assert "unparseable" in caplog.text
 
 
 async def test_fulfill_rejects_non_http_scheme_in_template_button_url(app, monkeypatch):
