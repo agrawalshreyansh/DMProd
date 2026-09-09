@@ -1,64 +1,74 @@
-import subprocess
-from pathlib import Path
-
+import httpx
 import pytest
 
+import app.workers.transcription as transcription_module
 from app.config import settings
 from app.workers.transcription import TranscriptionError, transcribe_audio
 
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
-SPEECH_FIXTURE = FIXTURES_DIR / "speech_sample.wav"
-# tiny, not the small model the worker actually runs — this is a plumbing
-# check (does the binary + model invocation work), not a quality check.
-TINY_MODEL_PATH = Path(__file__).parent.parent / "models" / "ggml-tiny.bin"
-
-pytestmark = pytest.mark.skipif(
-    not TINY_MODEL_PATH.exists(), reason="ggml-tiny.bin not present — see backend/.env.example"
-)
+VERBOSE_JSON = {
+    "text": " Hello world ",
+    "language": "english",
+    "duration": 3.5,
+    "segments": [],
+}
 
 
-def _make_silent_wav(path: Path) -> None:
-    subprocess.run(
-        ["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono", "-t", "2", str(path)],
-        capture_output=True,
-        check=True,
-        timeout=15,
-    )
+@pytest.fixture
+def audio_file(tmp_path):
+    path = tmp_path / "audio.wav"
+    path.write_bytes(b"RIFF....WAVEfmt ")  # contents irrelevant — httpx.post is mocked
+    return path
 
 
-def test_transcribe_audio_produces_text_from_real_speech(monkeypatch):
-    monkeypatch.setattr(settings, "whisper_model_path", str(TINY_MODEL_PATH))
-
-    result = transcribe_audio(SPEECH_FIXTURE)
-
-    assert result.text.strip() != ""
-    assert result.language
-    assert result.duration_seconds > 0
+@pytest.fixture(autouse=True)
+def _groq_key(monkeypatch):
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
 
 
-def test_transcribe_audio_returns_empty_text_for_silence(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "whisper_model_path", str(TINY_MODEL_PATH))
-    silent_path = tmp_path / "silence.wav"
-    _make_silent_wav(silent_path)
+def _mock_post(monkeypatch, *, status_code=200, json_body=None, raises=None):
+    def fake_post(*args, **kwargs):
+        if raises is not None:
+            raise raises
+        return httpx.Response(status_code, json=json_body, request=httpx.Request("POST", transcription_module.GROQ_TRANSCRIPTION_URL))
 
-    result = transcribe_audio(silent_path)
+    monkeypatch.setattr(transcription_module.httpx, "post", fake_post)
+
+
+def test_transcribe_audio_parses_verbose_json(monkeypatch, audio_file):
+    _mock_post(monkeypatch, json_body=VERBOSE_JSON)
+
+    result = transcribe_audio(audio_file)
+
+    assert result.text == "Hello world"
+    assert result.language == "english"
+    assert result.duration_seconds == 3.5
+
+
+def test_transcribe_audio_returns_empty_text_for_silence(monkeypatch, audio_file):
+    _mock_post(monkeypatch, json_body={"text": "", "language": "english", "duration": 2.0})
+
+    result = transcribe_audio(audio_file)
 
     assert result.text == ""
-    assert result.duration_seconds > 0
+    assert result.duration_seconds == 2.0
 
 
-def test_transcribe_audio_raises_when_model_missing(monkeypatch):
-    monkeypatch.setattr(settings, "whisper_model_path", "/nonexistent/model.bin")
+def test_transcribe_audio_raises_when_key_missing(monkeypatch, audio_file):
+    monkeypatch.setattr(settings, "groq_api_key", "")
 
-    with pytest.raises(TranscriptionError, match="model not found"):
-        transcribe_audio(SPEECH_FIXTURE)
+    with pytest.raises(TranscriptionError, match="GROQ_API_KEY is not set"):
+        transcribe_audio(audio_file)
 
 
-def test_transcribe_audio_raises_on_timeout(monkeypatch):
-    monkeypatch.setattr(settings, "whisper_model_path", str(TINY_MODEL_PATH))
-    import app.workers.transcription as transcription_module
-
-    monkeypatch.setattr(transcription_module, "TRANSCRIBE_TIMEOUT_SECONDS", 0.001)
+def test_transcribe_audio_raises_on_timeout(monkeypatch, audio_file):
+    _mock_post(monkeypatch, raises=httpx.TimeoutException("slow"))
 
     with pytest.raises(TranscriptionError, match="timed out"):
-        transcribe_audio(SPEECH_FIXTURE)
+        transcribe_audio(audio_file)
+
+
+def test_transcribe_audio_raises_on_api_error(monkeypatch, audio_file):
+    _mock_post(monkeypatch, status_code=400, json_body={"error": {"message": "bad audio"}})
+
+    with pytest.raises(TranscriptionError, match="bad audio"):
+        transcribe_audio(audio_file)

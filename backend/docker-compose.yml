@@ -1,0 +1,35 @@
+# API + RQ worker. Redis and MongoDB are external:
+#   - MongoDB: Atlas, via MONGO_URI in .env
+#   - Redis: another service on the shared `web` network, via REDIS_URL in
+#     .env (e.g. redis://redis:6379/0)
+# A reverse proxy on the `web` network terminates TLS and routes to `app`
+# (exposed on 8000, not published to the host).
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: my-fastapi-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "8000"
+    networks:
+      - web
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: my-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - web
+
+networks:
+  web:
+    external: true

@@ -1,44 +1,18 @@
-# whisper.cpp isn't in Debian's apt repos — build it from source in its own
-# stage so the toolchain (cmake/gcc/git) never lands in the final image,
-# just the compiled whisper-cli binary. Pinned to the same version installed
-# locally via homebrew during development (v1.9.2).
-FROM debian:bookworm-slim AS whisper-builder
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential cmake git ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN git clone --depth 1 --branch v1.9.2 https://github.com/ggml-org/whisper.cpp.git /whisper.cpp \
-    && cmake -B /whisper.cpp/build -S /whisper.cpp \
-    && cmake --build /whisper.cpp/build --config Release -j "$(nproc)"
-
-
 FROM python:3.12-slim
 
 WORKDIR /app
 
+# ffmpeg: audio extraction from downloaded reels (app/workers/audio.py).
+# Transcription is now a Groq API call, so no whisper.cpp / model download.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg curl \
+    && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
-
-COPY --from=whisper-builder /whisper.cpp/build/bin/whisper-cli /usr/local/bin/whisper-cli
-
-# Multilingual `large-v3-turbo` ggml model — see app/workers/transcription.py
-# for why (Hinglish/code-switched audio is the primary use case, so accuracy
-# is worth the size; turbo gets near-large-v3 quality at ~8x the decode
-# speed of full large-v3). ~1.5GB, fetched at build time rather than
-# committed to git.
-RUN mkdir -p /app/models \
-    && curl -L -o /app/models/ggml-large-v3-turbo.bin \
-       https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin
 
 COPY requirements-worker.txt .
 RUN pip install --no-cache-dir -r requirements-worker.txt
 
 COPY app ./app
 
-# Same env vars as the API image (app.config.Settings validates the full
-# set at import time even though this deployable only reads mongo_uri/
-# redis_url/mongo_db_name) — until Phase 11 splits config per-service, give
-# the worker the same .env the API uses.
+# Same .env as the API image — app.config.Settings validates the full set at
+# import time even though the worker only reads a subset.
 CMD ["python", "-m", "app.workers.run_worker"]

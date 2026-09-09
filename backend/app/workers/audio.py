@@ -12,7 +12,7 @@ class AudioExtractionError(Exception):
 
 def extract_audio(video_path: Path) -> Path:
     """Extract a 16kHz mono WAV from `video_path` into the same directory —
-    the format Phase 6's whisper.cpp step expects as input."""
+    the format Phase 6's transcription step (Groq Whisper) expects as input."""
     output_path = video_path.with_suffix(".wav")
     cmd = [
         "ffmpeg",

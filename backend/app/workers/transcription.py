@@ -1,22 +1,18 @@
-import json
-import re
-import subprocess
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+import httpx
+
 from app.config import settings
 
+# OpenAI-compatible audio endpoint. Groq file limit is 25MB (free) / 100MB
+# (dev tier); a 16kHz mono WAV reel is ~2KB/s * 100s so well under.
+GROQ_TRANSCRIPTION_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 TRANSCRIBE_TIMEOUT_SECONDS = 300
-
-# whisper.cpp emits bracketed tags like [BLANK_AUDIO]/[MUSIC] for non-speech
-# audio instead of an empty transcription array — strip them so a music-only
-# reel ends up with an actually-empty `text`, not a literal "[BLANK_AUDIO]".
-_BRACKETED_TAG = re.compile(r"\[[^\]]*\]")
 
 
 class TranscriptionError(Exception):
-    """whisper-cli failed, timed out, or the model file is missing."""
+    """Groq transcription is unconfigured, failed, or timed out."""
 
 
 @dataclass
@@ -26,71 +22,41 @@ class TranscriptionResult:
     duration_seconds: float
 
 
-def _probe_duration_seconds(audio_path: Path) -> float:
-    result = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(audio_path)],
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    try:
-        return float(result.stdout.strip())
-    except ValueError:
-        return 0.0
-
-
 def transcribe_audio(audio_path: Path) -> TranscriptionResult:
-    """Transcribe `audio_path` (a 16kHz mono WAV from Phase 5) via
-    whisper.cpp. `language` is auto-detected — Hinglish audio may make that
-    unreliable; not forced to a fixed language without evidence it's needed."""
-    if not Path(settings.whisper_model_path).exists():
-        raise TranscriptionError(f"whisper model not found at {settings.whisper_model_path}")
+    """Transcribe `audio_path` (a 16kHz mono WAV from Phase 5) with Groq's
+    hosted Whisper. `language` is auto-detected and returned by the API —
+    not forced to a fixed language without evidence it's needed."""
+    if not settings.groq_api_key:
+        raise TranscriptionError("GROQ_API_KEY is not set")
 
-    with tempfile.TemporaryDirectory() as out_dir:
-        out_base = Path(out_dir) / "out"
-        cmd = [
-            "whisper-cli",
-            "-m",
-            settings.whisper_model_path,
-            "-f",
-            str(audio_path),
-            "-l",
-            "auto",
-            "-oj",
-            "-of",
-            str(out_base),
-            "-np",
-        ]
+    try:
+        with audio_path.open("rb") as audio_file:
+            response = httpx.post(
+                GROQ_TRANSCRIPTION_URL,
+                headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+                files={"file": (audio_path.name, audio_file, "audio/wav")},
+                data={"model": settings.groq_whisper_model, "response_format": "verbose_json"},
+                timeout=TRANSCRIBE_TIMEOUT_SECONDS,
+            )
+    except httpx.TimeoutException as exc:
+        raise TranscriptionError(
+            f"Groq transcription timed out after {TRANSCRIBE_TIMEOUT_SECONDS}s"
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise TranscriptionError(f"Groq transcription request failed: {exc}") from exc
+
+    if response.status_code != 200:
+        # Groq errors come back as {"error": {"message": ...}}.
+        detail = response.text
         try:
-            result = subprocess.run(cmd, capture_output=True, timeout=TRANSCRIBE_TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired as exc:
-            raise TranscriptionError(f"whisper-cli timed out after {TRANSCRIBE_TIMEOUT_SECONDS}s") from exc
-        except FileNotFoundError as exc:
-            raise TranscriptionError("whisper-cli is not installed") from exc
+            detail = response.json()["error"]["message"]
+        except (ValueError, KeyError, TypeError):
+            pass
+        raise TranscriptionError(f"Groq transcription failed ({response.status_code}): {detail}")
 
-        if result.returncode != 0:
-            stderr_lines = result.stderr.decode(errors="replace").strip().splitlines()
-            raise TranscriptionError(stderr_lines[-1] if stderr_lines else "whisper-cli failed")
-
-        json_path = out_base.with_suffix(".json")
-        if not json_path.exists():
-            raise TranscriptionError("whisper-cli reported success but no output was written")
-
-        # whisper.cpp can split a multi-byte UTF-8 character across a
-        # segment/token boundary in its JSON output for non-Latin scripts
-        # (confirmed in practice on Hinglish audio — see module docstring
-        # above on why that's the primary use case here) — read_text()'s
-        # strict decode then crashes the whole pipeline over one bad byte.
-        # Matches the errors="replace" already used for stderr above.
-        data = json.loads(json_path.read_bytes().decode(errors="replace"))
-
-    segments = data.get("transcription", [])
-    raw_text = " ".join(seg.get("text", "") for seg in segments)
-    text = _BRACKETED_TAG.sub("", raw_text).strip()
-    language = data.get("result", {}).get("language", "")
-
+    data = response.json()
     return TranscriptionResult(
-        text=text,
-        language=language,
-        duration_seconds=_probe_duration_seconds(audio_path),
+        text=data.get("text", "").strip(),
+        language=data.get("language", ""),
+        duration_seconds=float(data.get("duration") or 0.0),
     )

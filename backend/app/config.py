@@ -14,7 +14,11 @@ class Settings(BaseSettings):
     meta_app_secret: str
     webhook_verify_token: str
     instagram_bot_access_token: str
-    whisper_model_path: str = "models/ggml-large-v3-turbo.bin"
+    # Worker-only. Hosted Whisper via Groq (OpenAI-compatible audio API).
+    # `whisper-large-v3` over `-turbo` for better multilingual accuracy —
+    # Hinglish (Hindi/English code-switched) audio is the primary use case.
+    groq_api_key: str = ""
+    groq_whisper_model: str = "whisper-large-v3"
     google_client_id: str = ""
     google_client_secret: str = ""
     instagram_session_id: str = ""
