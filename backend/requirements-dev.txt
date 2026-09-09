@@ -1,7 +1,7 @@
+# Local dev + CI: the API superset covers both services.
 -r requirements.txt
--r requirements-worker.txt
+
 pytest==8.3.3
 pytest-asyncio==0.24.0
-httpx==0.28.1
 mongomock-motor==0.0.34
 fakeredis==2.37.1
