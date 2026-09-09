@@ -13,7 +13,11 @@ class VisualEvent(BaseModel):
     """Embedded, one per surviving keyframe after dedup — raw structured
     output from Phase 13's Gemini vision call, kept for audit (same spirit
     as `GeneratedTask.raw_llm_response`). `Reel.visual_summary` is the
-    merged text actually fed to Phase 7's prompt, not this list directly."""
+    merged text actually fed to Phase 7's prompt, not this list directly.
+
+    For a carousel post (`Reel.media_type == "carousel"`) there are no
+    video timestamps — `timestamp_seconds` carries the 1-based slide number
+    instead."""
 
     timestamp_seconds: float
     description: str
@@ -29,6 +33,11 @@ class Reel(Document):
     reel_video_id: str | None = None
     url: str | None = None
     caption: str | None = None
+    # "reel" (video → audio → transcript → keyframes) or "carousel" (a feed
+    # post of images shared in a DM → all slide images → one vision pass, no
+    # audio). Downstream terminal status is "transcribed" for both so the
+    # enqueue/webhook logic needs no per-type branch.
+    media_type: Literal["reel", "carousel"] = "reel"
     status: str = "received"
     error_message: str | None = None
     transcript_text: str | None = None

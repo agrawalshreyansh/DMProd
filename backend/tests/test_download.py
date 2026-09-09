@@ -5,7 +5,7 @@ from yt_dlp.utils import DownloadError as YtDlpDownloadError
 
 from app.models.reel import Reel
 from app.workers import download as download_module
-from app.workers.download import ReelDownloadError, download_reel
+from app.workers.download import ReelDownloadError, download_carousel, download_reel
 
 
 class _FakeYoutubeDL:
@@ -160,6 +160,84 @@ def test_download_reel_raises_when_anonymous_fails_and_no_session(tmp_path, monk
 
     with pytest.raises(ReelDownloadError, match="empty media response"):
         download_reel(reel, tmp_path)
+
+
+class _FakeCarouselYoutubeDL:
+    """Writes `slide_count` real image files into the outtmpl's directory,
+    plus a stray .json, so download_carousel's image-only glob is exercised."""
+
+    slide_count = 3
+    info = {"_type": "playlist", "channel": "somecreator"}
+
+    def __init__(self, opts):
+        self.opts = opts
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def extract_info(self, url, download=True):
+        dest = Path(self.opts["outtmpl"]).parent
+        for i in range(1, self.slide_count + 1):
+            (dest / f"slide_{i:03d}.jpg").write_bytes(b"fake jpg bytes")
+        (dest / "slide_001.info.json").write_text("{}")
+        return self.info
+
+    def prepare_filename(self, info):
+        return str(Path(self.opts["outtmpl"]).parent / "slide_001.jpg")
+
+
+def test_download_carousel_returns_image_slides_in_order(tmp_path, monkeypatch):
+    monkeypatch.setattr(download_module, "YoutubeDL", _FakeCarouselYoutubeDL)
+    reel = Reel(url="https://www.instagram.com/p/abc123/", media_type="carousel")
+
+    paths = download_carousel(reel, tmp_path)
+
+    assert [p.name for p in paths] == ["slide_001.jpg", "slide_002.jpg", "slide_003.jpg"]
+    assert all(p.read_bytes() == b"fake jpg bytes" for p in paths)
+    assert reel.creator_username == "somecreator"
+
+
+def test_download_carousel_raises_when_no_images_written(tmp_path, monkeypatch):
+    class _NoImages(_FakeCarouselYoutubeDL):
+        slide_count = 0
+
+    monkeypatch.setattr(download_module, "YoutubeDL", _NoImages)
+    reel = Reel(url="https://www.instagram.com/p/abc123/", media_type="carousel")
+
+    with pytest.raises(ReelDownloadError, match="no image slides"):
+        download_carousel(reel, tmp_path)
+
+
+def test_download_carousel_raises_when_url_missing(tmp_path):
+    with pytest.raises(ReelDownloadError, match="no url"):
+        download_carousel(Reel(url=None, media_type="carousel"), tmp_path)
+
+
+def test_download_carousel_retries_with_session_cookie_after_anonymous_failure(tmp_path, monkeypatch):
+    opts_seen = []
+
+    class _FailThenSucceed(_FakeCarouselYoutubeDL):
+        def __init__(self, opts):
+            super().__init__(opts)
+            opts_seen.append(opts)
+
+        def extract_info(self, url, download=True):
+            if "cookiefile" not in self.opts:
+                raise YtDlpDownloadError("Instagram sent an empty media response")
+            return super().extract_info(url, download)
+
+    monkeypatch.setattr(download_module, "YoutubeDL", _FailThenSucceed)
+    monkeypatch.setattr(download_module.settings, "instagram_session_id", "sess-123")
+    reel = Reel(url="https://www.instagram.com/p/abc123/", media_type="carousel")
+
+    paths = download_carousel(reel, tmp_path)
+
+    assert len(paths) == 3
+    assert len(opts_seen) == 2
+    assert "sessionid\tsess-123" in Path(opts_seen[1]["cookiefile"]).read_text()
 
 
 @pytest.mark.slow

@@ -46,6 +46,11 @@ Never write a passive recap of the video's content. If your `title` or \
 `details.description` could be mistaken for "what this reel is about" \
 rather than "what the user should do next," rewrite it.
 
+Some shares are carousel posts (a sequence of images) rather than reels — \
+there you get the caption and a slide-by-slide visual description instead \
+of a transcript; everything here applies the same way, just work from \
+those two.
+
 You will receive the reel's caption and its transcribed audio, and may also \
 receive a visual timeline — on-screen text, slides, or notable visual \
 changes extracted from the video's frames, by timestamp. Use all three \
@@ -137,14 +142,23 @@ name if known) — never "Comment X to get the internship links."
 """
 
 
-def _build_prompt(transcript_text: str, caption: str, visual_summary: str = "") -> str:
+def _build_prompt(
+    transcript_text: str, caption: str, visual_summary: str = "", media_type: str = "reel"
+) -> str:
     caption_block = caption if caption else "(none provided)"
-    transcript_block = transcript_text if transcript_text else "(no speech detected / transcript unavailable)"
+    if media_type == "carousel":
+        transcript_block = "(this is a carousel post — no audio track, work from the caption and slides)"
+        visual_label = "Slide-by-slide visual description"
+    else:
+        transcript_block = (
+            transcript_text if transcript_text else "(no speech detected / transcript unavailable)"
+        )
+        visual_label = "Visual timeline (on-screen content by timestamp)"
     visual_block = visual_summary if visual_summary else "(none)"
     return (
         f"Reel caption:\n{caption_block}\n\n"
         f"Reel transcript:\n{transcript_block}\n\n"
-        f"Visual timeline (on-screen content by timestamp):\n{visual_block}"
+        f"{visual_label}:\n{visual_block}"
     )
 
 
@@ -182,16 +196,18 @@ async def generate_task_async(user_reel_id: str) -> None:
     transcript_text = (reel.transcript_text or "").strip()
     caption = (reel.caption or "").strip()
     visual_summary = (reel.visual_summary or "").strip()
-    if not transcript_text and not caption:
-        # Visual timeline alone doesn't count as "sufficient" — it's a
-        # supplementary source of specifics (Phase 13), not a substitute
-        # for having any transcript or caption at all.
+    # For a reel, the visual timeline alone doesn't count as "sufficient" —
+    # it's a supplementary source of specifics (Phase 13), not a substitute
+    # for a transcript/caption. For a carousel there *is* no transcript, so
+    # the slide descriptions are legitimately primary content there.
+    is_carousel = reel.media_type == "carousel"
+    if not transcript_text and not caption and not (is_carousel and visual_summary):
         user_reel.task_generation_status = "failed"
         user_reel.task_generation_error = "insufficient_content"
         await user_reel.save()
         return
 
-    prompt = _build_prompt(transcript_text, caption, visual_summary)
+    prompt = _build_prompt(transcript_text, caption, visual_summary, reel.media_type)
 
     try:
         client = genai.Client(api_key=secret["api_key"])

@@ -51,10 +51,32 @@ def _write_cookiefile(dest_dir: Path) -> str | None:
     return str(path)
 
 
-def _run_ytdl(url: str, opts: dict) -> tuple[Path, dict]:
-    def _run() -> tuple[Path, dict]:
+# Carousel slides yt-dlp writes to disk — anything that isn't one of these
+# (a video slide, a leftover .json) is ignored: a carousel's pipeline is
+# vision-only, so a video slide has no place in it.
+# ponytail: drop video slides entirely; sample a frame from them like the
+# reel path only if that ever turns out to lose real signal.
+CAROUSEL_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def _carousel_opts(dest_dir: Path) -> dict:
+    return {
+        **_base_opts(dest_dir),
+        # A carousel *is* the playlist — every slide, not just the first.
+        "outtmpl": str(dest_dir / "slide_%(playlist_index)03d.%(ext)s"),
+        "noplaylist": False,
+    }
+
+
+def _run_ytdl(url: str, opts: dict) -> tuple[Path | None, dict]:
+    def _run() -> tuple[Path | None, dict]:
         with YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
+            # A playlist (a carousel post) has no single output file —
+            # `prepare_filename` isn't meaningful for it; the carousel
+            # caller globs the dest dir for the slide images instead.
+            if info.get("_type") == "playlist":
+                return None, info
             return Path(ydl.prepare_filename(info)), info
 
     # ponytail: a timed-out download keeps running in its thread until it
@@ -72,6 +94,27 @@ def _run_ytdl(url: str, opts: dict) -> tuple[Path, dict]:
             raise ReelDownloadError(str(exc)) from exc
 
 
+def _run_with_session_fallback(
+    url: str, dest_dir: Path, opts: dict, reel: Reel
+) -> tuple[Path | None, dict]:
+    """yt-dlp anonymous first. Instagram increasingly blocks logged-out
+    fetches ("empty media response"); only when that fails do we fall back
+    to the authenticated session (shared with instagrapi / Phase 9), since
+    that account is rate-limit-risky and best kept off the hot path."""
+    try:
+        return _run_ytdl(url, opts)
+    except ReelDownloadError as anon_error:
+        cookiefile = _write_cookiefile(dest_dir)
+        if not cookiefile:
+            raise
+        logger.info(
+            "anonymous download failed reel_id=%s (%s), retrying with session cookie",
+            reel.id,
+            anon_error,
+        )
+        return _run_ytdl(url, {**opts, "cookiefile": cookiefile})
+
+
 def download_reel(reel: Reel, dest_dir: Path) -> Path:
     """Download `reel.url` into `dest_dir` via yt-dlp, return the file path.
 
@@ -82,29 +125,14 @@ def download_reel(reel: Reel, dest_dir: Path) -> Path:
         raise ReelDownloadError("reel has no url")
 
     start = time.monotonic()
-    # Anonymous first. Instagram increasingly blocks logged-out reel fetches
-    # ("empty media response"); only when that fails do we fall back to the
-    # authenticated session (shared with instagrapi / Phase 9), since that
-    # account is rate-limit-risky and best kept off the hot path.
-    try:
-        path, info = _run_ytdl(reel.url, _base_opts(dest_dir))
-    except ReelDownloadError as anon_error:
-        cookiefile = _write_cookiefile(dest_dir)
-        if not cookiefile:
-            raise
-        logger.info(
-            "anonymous download failed reel_id=%s (%s), retrying with session cookie",
-            reel.id,
-            anon_error,
-        )
-        path, info = _run_ytdl(reel.url, {**_base_opts(dest_dir), "cookiefile": cookiefile})
+    path, info = _run_with_session_fallback(reel.url, dest_dir, _base_opts(dest_dir), reel)
 
     # Phase 9 (comment-to-unlock): the creator's username, needed later to
     # follow/unfollow via instagrapi — caller's existing `reel.save()` after
     # this call persists it, no extra write needed here.
     reel.creator_username = info.get("channel") or None
 
-    if not path.exists():
+    if path is None or not path.exists():
         raise ReelDownloadError("yt-dlp reported success but no file was written")
 
     logger.info(
@@ -115,3 +143,32 @@ def download_reel(reel: Reel, dest_dir: Path) -> Path:
         time.monotonic() - start,
     )
     return path
+
+
+def download_carousel(reel: Reel, dest_dir: Path) -> list[Path]:
+    """Download every image slide of an Instagram carousel post (`reel.url`
+    is an `instagram.com/p/...` permalink) into `dest_dir`, return the image
+    paths in slide order. Raises ReelDownloadError if nothing usable came
+    down. Same anonymous-first / session-fallback rule as `download_reel`.
+    """
+    if not reel.url:
+        raise ReelDownloadError("reel has no url")
+
+    start = time.monotonic()
+    _, info = _run_with_session_fallback(reel.url, dest_dir, _carousel_opts(dest_dir), reel)
+
+    # Same as download_reel — creator username for Phase 9 (carousel posts
+    # run "comment X to unlock" campaigns just as often as reels do).
+    reel.creator_username = info.get("channel") or info.get("uploader") or None
+
+    images = sorted(p for p in dest_dir.iterdir() if p.suffix.lower() in CAROUSEL_IMAGE_EXTS)
+    if not images:
+        raise ReelDownloadError("carousel download produced no image slides")
+
+    logger.info(
+        "downloaded carousel reel_id=%s slides=%d elapsed=%.1fs",
+        reel.id,
+        len(images),
+        time.monotonic() - start,
+    )
+    return images

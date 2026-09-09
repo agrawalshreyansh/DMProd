@@ -11,10 +11,10 @@ from app.models.reel import Reel
 from app.models.user_reel import UserReel
 from app.queue import get_queue
 from app.workers.audio import AudioExtractionError, extract_audio
-from app.workers.download import ReelDownloadError, download_reel
+from app.workers.download import ReelDownloadError, download_carousel, download_reel
 from app.workers.task_generation import generate_task
 from app.workers.transcription import TranscriptionError, transcribe_audio
-from app.workers.visual_analysis import analyze_visuals
+from app.workers.visual_analysis import analyze_carousel, analyze_visuals
 
 logger = logging.getLogger("worker.process_reel")
 
@@ -38,7 +38,46 @@ async def process_reel_async(reel_id: str) -> None:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+async def _enqueue_task_generation(reel: Reel) -> None:
+    # Task generation is per-(user, reel) — each user has their own Gemini
+    # key, so it can't be deduped on the shared Reel the way download/audio/
+    # transcribe are. Covers every user who shared this reel while it was
+    # still processing, not just whoever's share triggered this run.
+    user_reels = await UserReel.find(UserReel.reel_id == str(reel.id)).to_list()
+    for user_reel in user_reels:
+        get_queue().enqueue(generate_task, str(user_reel.id), retry=Retry(max=3))
+
+
+async def _run_carousel_pipeline(reel: Reel, tmp_dir: Path) -> None:
+    """Carousel posts have no audio: download every slide image, one Gemini
+    vision pass, done. `caption` + `visual_summary` are what task generation
+    reads. Ends at the same "transcribed" status as the reel path so the
+    downstream enqueue/webhook logic needs no carousel-specific branch."""
+    try:
+        image_paths = download_carousel(reel, tmp_dir)
+    except ReelDownloadError as exc:
+        logger.warning("carousel download failed reel_id=%s error=%s", reel.id, exc)
+        reel.status = "failed"
+        reel.error_message = str(exc)
+        await reel.save()
+        return
+
+    reel.status = "downloaded"
+    await reel.save()
+
+    analyze_carousel(reel, image_paths)  # never raises
+
+    reel.status = "transcribed"
+    await reel.save()
+
+    await _enqueue_task_generation(reel)
+
+
 async def _run_pipeline(reel: Reel, tmp_dir: Path) -> None:
+    if reel.media_type == "carousel":
+        await _run_carousel_pipeline(reel, tmp_dir)
+        return
+
     try:
         video_path = download_reel(reel, tmp_dir)
     except ReelDownloadError as exc:
@@ -103,13 +142,7 @@ async def _run_pipeline(reel: Reel, tmp_dir: Path) -> None:
     reel.status = "transcribed"
     await reel.save()
 
-    # Task generation is per-(user, reel) — each user has their own Gemini
-    # key, so it can't be deduped on the shared Reel the way download/audio/
-    # transcribe are. Covers every user who shared this reel while it was
-    # still processing, not just whoever's share triggered this run.
-    user_reels = await UserReel.find(UserReel.reel_id == str(reel.id)).to_list()
-    for user_reel in user_reels:
-        get_queue().enqueue(generate_task, str(user_reel.id), retry=Retry(max=3))
+    await _enqueue_task_generation(reel)
 
 
 def process_reel(reel_id: str) -> None:

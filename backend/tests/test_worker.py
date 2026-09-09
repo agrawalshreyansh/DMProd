@@ -128,6 +128,70 @@ async def test_process_reel_marks_failed_on_audio_extraction_error(app, monkeypa
     assert not captured["dir"].exists()
 
 
+def _fake_download_carousel(captured):
+    def _download(reel, dest_dir):
+        captured["dir"] = dest_dir
+        paths = []
+        for i in (1, 2):
+            p = dest_dir / f"slide_{i:03d}.jpg"
+            p.write_bytes(b"fake jpg bytes")
+            paths.append(p)
+        return paths
+
+    return _download
+
+
+def _fake_analyze_carousel(reel, image_paths):
+    reel.visual_summary = "Slide 1: a list of books"
+    reel.visual_processing_status = "done"
+
+
+async def test_process_carousel_succeeds_to_transcribed_with_visual_summary(app, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(process_reel_module, "download_carousel", _fake_download_carousel(captured))
+    monkeypatch.setattr(process_reel_module, "analyze_carousel", _fake_analyze_carousel)
+
+    reel = await Reel(status="queued", media_type="carousel", caption="a caption").insert()
+    await process_reel_async(str(reel.id))
+
+    updated = await Reel.get(reel.id)
+    assert updated.status == "transcribed"
+    assert updated.error_message is None
+    assert updated.visual_summary == "Slide 1: a list of books"
+    assert updated.transcript_text is None
+    assert not captured["dir"].exists()
+
+
+async def test_process_carousel_marks_failed_on_download_error(app, monkeypatch):
+    def failing(reel, dest_dir):
+        raise ReelDownloadError("carousel download produced no image slides")
+
+    monkeypatch.setattr(process_reel_module, "download_carousel", failing)
+
+    reel = await Reel(status="queued", media_type="carousel").insert()
+    await process_reel_async(str(reel.id))
+
+    updated = await Reel.get(reel.id)
+    assert updated.status == "failed"
+    assert "no image slides" in updated.error_message
+
+
+async def test_process_carousel_enqueues_task_generation_for_every_user_reel(app, monkeypatch):
+    monkeypatch.setattr(process_reel_module, "download_carousel", _fake_download_carousel({}))
+    monkeypatch.setattr(process_reel_module, "analyze_carousel", _fake_analyze_carousel)
+
+    reel = await Reel(status="queued", media_type="carousel", caption="c").insert()
+    share = await UserReel(
+        user_id="user-a", reel_id=str(reel.id), sender_ig_id="1", message_id="m1"
+    ).insert()
+
+    await process_reel_async(str(reel.id))
+
+    jobs = get_queue().jobs
+    assert [j.func_name for j in jobs] == ["app.workers.task_generation.generate_task"]
+    assert jobs[0].args == (str(share.id),)
+
+
 async def test_process_reel_marks_failed_on_transcription_error(app, monkeypatch):
     captured = {}
     monkeypatch.setattr(process_reel_module, "download_reel", _fake_download_reel(captured))

@@ -12,8 +12,10 @@ from app.workers.visual_analysis import (
     VisualAnalysisError,
     VisualAnalysisSchema,
     _VisualEventItem,
+    analyze_carousel,
     analyze_frames,
     analyze_visuals,
+    build_slide_summary,
     build_timeline,
     dedupe_frames,
     extract_frames,
@@ -148,6 +150,65 @@ def test_build_timeline_formats_timestamp_and_on_screen_text():
 
 def test_build_timeline_empty_for_no_events():
     assert build_timeline([]) == ""
+
+
+def test_build_slide_summary_formats_slide_number_and_on_screen_text():
+    events = [
+        VisualEvent(timestamp_seconds=1.0, description="a title card", on_screen_text="5 books to read"),
+        VisualEvent(timestamp_seconds=2.0, description="a plain photo", on_screen_text=None),
+    ]
+
+    summary = build_slide_summary(events)
+
+    assert "Slide 1: a title card (on-screen: 5 books to read)" in summary
+    assert "Slide 2: a plain photo" in summary
+    assert "on-screen: None" not in summary
+
+
+def test_analyze_carousel_batches_all_slides_into_one_call(tmp_path, monkeypatch):
+    slides = [tmp_path / f"slide_{i:03d}.jpg" for i in (1, 2, 3)]
+    for i, path in enumerate(slides):
+        _noise_frame(path, seed=i)
+
+    calls = []
+    parsed = VisualAnalysisSchema(
+        events=[_VisualEventItem(timestamp_seconds=1.0, description="intro slide", on_screen_text="Read these")]
+    )
+    monkeypatch.setattr(va_module.settings, "visual_analysis_gemini_api_key", "sk-test")
+    monkeypatch.setattr(va_module.genai, "Client", _fake_genai_client(parsed=parsed, calls=calls))
+
+    reel = SimpleNamespace(id="r1", visual_events=None, visual_summary=None, visual_processing_status=None)
+    analyze_carousel(reel, slides)
+
+    assert len(calls) == 1
+    assert len(calls[0]["contents"]) == len(slides) * 2  # label + image per slide
+    assert reel.visual_processing_status == "done"
+    assert reel.visual_summary == "Slide 1: intro slide (on-screen: Read these)"
+
+
+@pytest.mark.asyncio
+async def test_analyze_carousel_skips_when_no_key(app, tmp_path, monkeypatch):
+    monkeypatch.setattr(va_module.settings, "visual_analysis_gemini_api_key", "")
+    reel = await Reel(reel_video_id="v1", media_type="carousel").insert()
+
+    analyze_carousel(reel, [tmp_path / "slide_001.jpg"])
+
+    assert reel.visual_processing_status == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_analyze_carousel_never_raises_on_gemini_error(app, tmp_path, monkeypatch):
+    slide = tmp_path / "slide_001.jpg"
+    _noise_frame(slide, seed=1)
+    monkeypatch.setattr(va_module.settings, "visual_analysis_gemini_api_key", "sk-test")
+    monkeypatch.setattr(
+        va_module.genai, "Client", _fake_genai_client(raise_error=RuntimeError("gemini down"))
+    )
+    reel = await Reel(reel_video_id="v1", media_type="carousel").insert()
+
+    analyze_carousel(reel, [slide])  # must not raise
+
+    assert reel.visual_processing_status == "failed"
 
 
 @pytest.mark.asyncio

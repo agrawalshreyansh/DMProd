@@ -145,6 +145,64 @@ async def test_reel_from_unlinked_sender_is_not_stored(client, instagram_webhook
     assert get_queue().jobs == []
 
 
+def _carousel_share_payload(sender_id: str) -> dict:
+    return {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "17841400000000000",
+                "time": 1700000000,
+                "messaging": [
+                    {
+                        "sender": {"id": sender_id},
+                        "recipient": {"id": "17841400000000000"},
+                        "timestamp": 1700000000123,
+                        "message": {
+                            "mid": "carousel-message-id",
+                            "attachments": [
+                                {
+                                    "type": "ig_post",
+                                    "payload": {
+                                        "id": 18000000000000000,
+                                        "title": "5 books that changed my life",
+                                        "url": "https://www.instagram.com/p/CxYz123/",
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+
+
+async def test_shared_carousel_post_is_stored_as_a_carousel_reel(client):
+    await InstagramAccount(
+        user_id="user-abc", ig_user_id="1234567890", username="alex"
+    ).insert()
+
+    body = json.dumps(_carousel_share_payload("1234567890")).encode()
+    resp = await client.post(
+        "/webhooks/instagram",
+        content=body,
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": sign_payload(body)},
+    )
+    assert resp.status_code == 200
+
+    reels = await Reel.find_all().to_list()
+    assert len(reels) == 1
+    assert reels[0].media_type == "carousel"
+    assert reels[0].reel_video_id == "18000000000000000"
+    assert reels[0].caption == "5 books that changed my life"
+    assert reels[0].url == "https://www.instagram.com/p/CxYz123/"
+    assert reels[0].status == "queued"
+
+    jobs = get_queue().jobs
+    assert [j.func_name for j in jobs] == ["app.workers.process_reel.process_reel"]
+    assert jobs[0].args == (str(reels[0].id),)
+
+
 async def test_redelivered_event_does_not_duplicate_the_reel(client, instagram_webhook_payload):
     await InstagramAccount(
         user_id="user-abc", ig_user_id="1234567890", username="alex"

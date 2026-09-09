@@ -36,6 +36,13 @@ async def verify_subscription(request: Request) -> Response:
     raise HTTPException(status.HTTP_403_FORBIDDEN, "Verification failed")
 
 
+# Shared-media attachment types we process, mapped to Reel.media_type. A
+# reel is `ig_reel` (payload.reel_video_id); a feed post / carousel shared
+# in a DM is `ig_post` (payload.id), per Meta's Instagram messaging webhook
+# reference — both carry `url` (permalink) and `title` (caption).
+_SHARE_TYPES = {"ig_reel": "reel", "ig_post": "carousel"}
+
+
 async def _record_reel_share(user_id: str, sender_ig_id: str, event: dict[str, Any]) -> None:
     message = event.get("message", {})
     message_id = message.get("mid")
@@ -43,7 +50,8 @@ async def _record_reel_share(user_id: str, sender_ig_id: str, event: dict[str, A
         return
 
     for attachment in message.get("attachments", []):
-        if attachment.get("type") != "ig_reel":
+        media_type = _SHARE_TYPES.get(attachment.get("type"))
+        if media_type is None:
             continue
         # Meta can redeliver the same webhook event — check first so a
         # redelivery is a no-op instead of a raised DuplicateKeyError (and
@@ -52,15 +60,22 @@ async def _record_reel_share(user_id: str, sender_ig_id: str, event: dict[str, A
             return
 
         payload = attachment.get("payload", {})
-        reel_video_id = payload.get("reel_video_id")
+        media_id = payload.get("reel_video_id") or (
+            str(payload["id"]) if payload.get("id") is not None else None
+        )
 
-        # Reels get shared by many users — reuse the existing content
-        # (and skip re-downloading/re-transcribing) whenever this exact
-        # reel_video_id has already been fully processed.
-        reel = await Reel.find_one(Reel.reel_video_id == reel_video_id) if reel_video_id else None
+        # Shared media gets sent by many users — reuse the existing content
+        # (and skip re-downloading/re-processing) whenever this exact media
+        # id has already been fully processed.
+        reel = await Reel.find_one(Reel.reel_video_id == media_id) if media_id else None
         needs_processing = reel is None or reel.status != "transcribed"
         if reel is None:
-            reel = Reel(reel_video_id=reel_video_id, url=payload.get("url"), caption=payload.get("title"))
+            reel = Reel(
+                reel_video_id=media_id,
+                url=payload.get("url"),
+                caption=payload.get("title"),
+                media_type=media_type,
+            )
             await reel.insert()
 
         # Same user re-sharing a reel they've already shared doesn't need a

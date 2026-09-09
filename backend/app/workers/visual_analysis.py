@@ -36,6 +36,17 @@ rather than paraphrasing it; leave it null when there is none. Skip frames \
 that show nothing more than a person talking to camera with no meaningful \
 on-screen content - only return events for frames actually worth noting."""
 
+CAROUSEL_VISION_SYSTEM_INSTRUCTION = """\
+You are given the images of an Instagram carousel post, in order, each \
+preceded by a line stating its slide number. Describe what each slide \
+shows - on-screen text, lists, product names, screenshots, diagrams, \
+charts, notable visuals - in enough detail that someone who only reads \
+your description (never seeing the post) knows exactly what was on each \
+slide. Copy any on-screen text verbatim into `on_screen_text` rather than \
+paraphrasing it; leave it null when there is none. For each event, set \
+`timestamp_seconds` to that slide's number. Return one event per slide \
+worth noting; skip slides that carry nothing beyond decoration."""
+
 
 class VisualAnalysisError(Exception):
     """ffmpeg failed, or the Gemini vision call failed/returned nothing
@@ -112,15 +123,18 @@ def _cap_keyframes(frame_paths: list[Path]) -> list[Path]:
     return [frame_paths[int(i * step)] for i in range(MAX_KEYFRAMES)]
 
 
-def analyze_frames(frame_paths: list[Path], api_key: str) -> list[VisualEvent]:
-    """One batched Gemini vision call over every surviving keyframe - the
-    actual cost lever is this being one call, not one-per-frame."""
-    if not frame_paths:
+def _run_vision(
+    labeled_images: list[tuple[str, Path]], system_instruction: str, api_key: str
+) -> list[VisualEvent]:
+    """One batched Gemini vision call over every image - the actual cost
+    lever is this being one call, not one per image. Each entry is a
+    (label, path): the label line precedes its image in the prompt."""
+    if not labeled_images:
         return []
 
     contents: list = []
-    for path in frame_paths:
-        contents.append(f"Timestamp: {_frame_timestamp(path):.1f}s")
+    for label, path in labeled_images:
+        contents.append(label)
         contents.append(Image.open(path))
 
     client = genai.Client(api_key=api_key)
@@ -128,7 +142,7 @@ def analyze_frames(frame_paths: list[Path], api_key: str) -> list[VisualEvent]:
         model=VISION_MODEL,
         contents=contents,
         config=types.GenerateContentConfig(
-            system_instruction=VISION_SYSTEM_INSTRUCTION,
+            system_instruction=system_instruction,
             response_mime_type="application/json",
             response_schema=VisualAnalysisSchema,
         ),
@@ -147,6 +161,15 @@ def analyze_frames(frame_paths: list[Path], api_key: str) -> list[VisualEvent]:
     ]
 
 
+def analyze_frames(frame_paths: list[Path], api_key: str) -> list[VisualEvent]:
+    """Batched Gemini vision over reel keyframes, labelled by timestamp."""
+    return _run_vision(
+        [(f"Timestamp: {_frame_timestamp(p):.1f}s", p) for p in frame_paths],
+        VISION_SYSTEM_INSTRUCTION,
+        api_key,
+    )
+
+
 def build_timeline(events: list[VisualEvent]) -> str:
     """The merged text that actually reaches Phase 7's prompt - not the raw
     frames or raw Gemini response."""
@@ -158,6 +181,64 @@ def build_timeline(events: list[VisualEvent]) -> str:
             line += f" (on-screen: {event.on_screen_text})"
         lines.append(line)
     return "\n".join(lines)
+
+
+def _carousel_slide_number(path: Path) -> int:
+    """`slide_003.jpg` -> 3; 0 if the name has no digits (keeps sort stable)."""
+    digits = "".join(c for c in path.stem if c.isdigit())
+    return int(digits) if digits else 0
+
+
+def build_slide_summary(events: list[VisualEvent]) -> str:
+    """Carousel counterpart to `build_timeline` - slide numbers, not
+    timestamps. This is the text that reaches Phase 7's prompt."""
+    lines = []
+    for event in events:
+        line = f"Slide {int(event.timestamp_seconds)}: {event.description}"
+        if event.on_screen_text:
+            line += f" (on-screen: {event.on_screen_text})"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def analyze_carousel(reel: Reel, image_paths: list[Path]) -> None:
+    """Vision-only counterpart to `analyze_visuals` for carousel posts:
+    every slide image goes to one Gemini call (no frame extraction, no
+    dedup - the slides are already distinct), result written onto `reel`
+    for the caller's `reel.save()` to persist.
+
+    Same never-raises contract as `analyze_visuals`. Note the different
+    weight: for a carousel there is no transcript, so this output plus the
+    caption is the *entire* basis for task generation, not a supplement."""
+    if not settings.visual_analysis_gemini_api_key:
+        reel.visual_processing_status = "skipped"
+        return
+
+    reel.visual_processing_status = "processing"
+    slides = _cap_keyframes(image_paths)  # IG carousels cap at 10 anyway
+    labeled = [(f"Slide {_carousel_slide_number(p)}", p) for p in slides]
+    try:
+        events = _run_vision(
+            labeled, CAROUSEL_VISION_SYSTEM_INSTRUCTION, settings.visual_analysis_gemini_api_key
+        )
+    except VisualAnalysisError as exc:
+        logger.warning("carousel visual analysis failed reel_id=%s error=%s", reel.id, exc)
+        reel.visual_processing_status = "failed"
+        return
+    except Exception as exc:  # Gemini SDK can raise its own error types too
+        logger.warning("carousel visual analysis failed reel_id=%s error=%s", reel.id, exc)
+        reel.visual_processing_status = "failed"
+        return
+
+    reel.visual_events = events
+    reel.visual_summary = build_slide_summary(events)
+    reel.visual_processing_status = "done"
+    logger.info(
+        "carousel visual analysis done reel_id=%s slides=%d events=%d",
+        reel.id,
+        len(slides),
+        len(events),
+    )
 
 
 def analyze_visuals(reel: Reel, video_path: Path, tmp_dir: Path) -> None:

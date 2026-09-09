@@ -299,6 +299,49 @@ async def test_generate_task_fails_cleanly_without_gemini_key(app, monkeypatch):
     assert updated_share.task_generation_error == "no Gemini key configured"
 
 
+async def test_build_prompt_for_carousel_labels_slides_and_marks_no_audio():
+    prompt = task_generation_module._build_prompt(
+        "", "book list caption", "Slide 1: a stack of books", media_type="carousel"
+    )
+    assert "carousel post" in prompt
+    assert "no audio track" in prompt
+    assert "Slide-by-slide visual description" in prompt
+    assert "Slide 1: a stack of books" in prompt
+    assert "book list caption" in prompt
+
+
+async def test_carousel_visual_summary_alone_is_sufficient_content(app, monkeypatch):
+    await CredentialService.set("user-1", "gemini", {"api_key": "sk-test"})
+    reel = await Reel(
+        status="transcribed",
+        media_type="carousel",
+        transcript_text=None,
+        caption=None,
+        visual_summary="Slide 1: a list of 5 books with titles",
+    ).insert()
+    user_reel = await UserReel(
+        user_id="user-1", reel_id=str(reel.id), sender_ig_id="ig1", message_id="m1"
+    ).insert()
+
+    calls = []
+    parsed = TaskGenerationSchema(
+        task_type="resource_reference",
+        title="Read the 5 books from the carousel",
+        details=TaskDetails(description="Save these 5 books"),
+        due_date=None,
+    )
+    monkeypatch.setattr(
+        task_generation_module.genai, "Client", _fake_genai_client(parsed=parsed, calls=calls)
+    )
+
+    await generate_task_async(str(user_reel.id))
+
+    assert len(calls) == 1
+    task = await GeneratedTask.find_one(GeneratedTask.user_id == "user-1")
+    assert task is not None and task.task_type == "resource_reference"
+    assert (await UserReel.get(user_reel.id)).task_generation_status == "generated"
+
+
 async def test_generate_task_skips_gemini_call_when_content_is_empty(app, monkeypatch):
     await CredentialService.set("user-1", "gemini", {"api_key": "sk-test"})
     _, user_reel = await _make_reel_and_share(transcript="", caption="")
