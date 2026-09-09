@@ -70,19 +70,37 @@ def _text_block(block_type: str, content: str) -> dict:
     }
 
 
-def _build_children(task: GeneratedTask) -> list[dict]:
-    lines = []
+def _render_detail_text(task: GeneratedTask) -> str:
+    """Plain-text rendering of the whole task detail — description, key
+    points, location, link — in the same order the app's task modal shows
+    them. Used for the "Description" grid property so the column carries
+    everything, not just the first sentence (the page body still gets the
+    richer block version via _build_children)."""
+    parts: list[str] = []
     if task.details.description:
-        lines.append(task.details.description)
+        parts.append(task.details.description)
+    if task.details.key_points:
+        parts.append("\n".join(f"• {point}" for point in task.details.key_points))
     if task.details.location:
-        lines.append(f"Location: {task.details.location}")
+        parts.append(f"Location: {task.details.location}")
     if task.details.link:
-        lines.append(f"Link: {task.details.link}")
-    if not lines:
-        lines.append("(no details)")
+        parts.append(f"Link: {task.details.link}")
+    return "\n\n".join(parts)
 
-    children = [_text_block("paragraph", line) for line in lines]
-    children.extend(_text_block("bulleted_list_item", point) for point in task.details.key_points)
+
+def _build_children(task: GeneratedTask) -> list[dict]:
+    children: list[dict] = []
+    if task.details.description:
+        children.append(_text_block("paragraph", task.details.description))
+    children.extend(
+        _text_block("bulleted_list_item", point) for point in task.details.key_points
+    )
+    if task.details.location:
+        children.append(_text_block("paragraph", f"Location: {task.details.location}"))
+    if task.details.link:
+        children.append(_text_block("paragraph", f"Link: {task.details.link}"))
+    if not children:
+        children.append(_text_block("paragraph", "(no details)"))
     return children
 
 
@@ -151,7 +169,8 @@ async def push_to_notion(
                 "select": {"name": TASK_TYPE_LABELS.get(task.task_type, task.task_type)}
             }
 
-        if task.details.description:
+        detail_text = _render_detail_text(task)
+        if detail_text:
             description_property = await _ensure_description_property(
                 client, data_source_id, properties_schema
             )
@@ -160,7 +179,7 @@ async def push_to_notion(
                     "rich_text": [
                         {
                             "type": "text",
-                            "text": {"content": task.details.description[:DESCRIPTION_PROPERTY_MAX_LEN]},
+                            "text": {"content": detail_text[:DESCRIPTION_PROPERTY_MAX_LEN]},
                         }
                     ]
                 }

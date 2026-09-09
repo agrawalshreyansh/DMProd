@@ -110,12 +110,52 @@ async def test_push_to_notion_creates_page_with_title_and_body(app, monkeypatch)
     assert "Status" not in create_kwargs["properties"]
     # description paragraph + one key_point bullet
     assert len(create_kwargs["children"]) == 2
-    # also mirrored into a property so it shows in the database's default
-    # grid view, not just inside the page body
-    assert (
-        create_kwargs["properties"]["Description"]["rich_text"][0]["text"]["content"]
-        == task.details.description
+    # full detail (description + key points) mirrored into a property so the
+    # database's default grid view shows everything, not just the first
+    # sentence — matches what the app's task modal renders
+    assert create_kwargs["properties"]["Description"]["rich_text"][0]["text"]["content"] == (
+        "Make it Sunday\n\n• 3 ingredients"
     )
+
+
+async def test_push_to_notion_property_and_body_carry_full_detail(app, monkeypatch):
+    await CredentialService.set("user-1", "notion", {"token": "secret-token"})
+    task = await _make_task(
+        details=TaskDetails(
+            description="Cook the sauce",
+            key_points=["400g tomatoes", "2 cloves garlic"],
+            location="Trattoria da Enzo, Rome",
+            link="https://example.com/recipe",
+        )
+    )
+    calls = {}
+    data_source = {"properties": {"Name": {"type": "title"}, "Description": {"type": "rich_text"}}}
+    monkeypatch.setattr(
+        push_notion_module,
+        "AsyncClient",
+        _fake_async_client(
+            data_source=data_source, page={"url": "https://notion.so/x", "id": "page-x"}, calls=calls
+        ),
+    )
+
+    await push_to_notion(task, _integration())
+
+    create_kwargs = calls["pages_create"][0]
+    assert create_kwargs["properties"]["Description"]["rich_text"][0]["text"]["content"] == (
+        "Cook the sauce\n\n"
+        "• 400g tomatoes\n• 2 cloves garlic\n\n"
+        "Location: Trattoria da Enzo, Rome\n\n"
+        "Link: https://example.com/recipe"
+    )
+    # body: description para, 2 key-point bullets, location para, link para
+    block_types = [b[b["type"]]["rich_text"][0]["text"]["content"] for b in create_kwargs["children"]]
+    assert block_types == [
+        "Cook the sauce",
+        "400g tomatoes",
+        "2 cloves garlic",
+        "Location: Trattoria da Enzo, Rome",
+        "Link: https://example.com/recipe",
+    ]
 
 
 async def test_push_to_notion_creates_missing_description_column(app, monkeypatch):
