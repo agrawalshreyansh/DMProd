@@ -107,6 +107,42 @@ def test_download_reel_raises_when_url_missing(tmp_path):
         download_reel(reel, tmp_path)
 
 
+def test_download_reel_passes_sessionid_cookiefile_when_configured(tmp_path, monkeypatch):
+    seen = {}
+
+    class _CapturingYoutubeDL(_FakeYoutubeDL):
+        def __init__(self, opts):
+            super().__init__(opts)
+            seen.update(opts)
+
+    monkeypatch.setattr(download_module, "YoutubeDL", _CapturingYoutubeDL)
+    monkeypatch.setattr(download_module.settings, "instagram_session_id", "sess-123")
+    reel = Reel(url="https://www.instagram.com/reel/abc123/")
+
+    download_reel(reel, tmp_path)
+
+    cookiefile = Path(seen["cookiefile"])
+    assert cookiefile.exists()
+    assert "sessionid\tsess-123" in cookiefile.read_text()
+
+
+def test_download_reel_omits_cookiefile_when_no_sessionid(tmp_path, monkeypatch):
+    seen = {}
+
+    class _CapturingYoutubeDL(_FakeYoutubeDL):
+        def __init__(self, opts):
+            super().__init__(opts)
+            seen.update(opts)
+
+    monkeypatch.setattr(download_module, "YoutubeDL", _CapturingYoutubeDL)
+    monkeypatch.setattr(download_module.settings, "instagram_session_id", "")
+    reel = Reel(url="https://www.instagram.com/reel/abc123/")
+
+    download_reel(reel, tmp_path)
+
+    assert "cookiefile" not in seen
+
+
 @pytest.mark.slow
 def test_download_reel_against_a_real_stable_public_video(tmp_path, app):
     # A small (~800KB), long-stable direct video file — hits yt-dlp's

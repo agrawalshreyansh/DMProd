@@ -6,6 +6,7 @@ from pathlib import Path
 
 from yt_dlp import YoutubeDL
 
+from app.config import settings
 from app.models.reel import Reel
 
 logger = logging.getLogger("worker.download")
@@ -20,6 +21,20 @@ class ReelDownloadError(Exception):
     """Any yt-dlp failure (bad URL, unsupported, oversized, timeout),
     normalized to one type so the caller doesn't need to know yt-dlp's
     exception hierarchy."""
+
+
+def _write_cookiefile(dest_dir: Path) -> str | None:
+    """Netscape cookies.txt holding just the Instagram `sessionid`, or None
+    if INSTAGRAM_SESSION_ID is unset (anonymous download, likely to fail)."""
+    session_id = settings.instagram_session_id
+    if not session_id:
+        return None
+    path = dest_dir / "ig_cookies.txt"
+    path.write_text(
+        "# Netscape HTTP Cookie File\n"
+        f".instagram.com\tTRUE\t/\tTRUE\t0\tsessionid\t{session_id}\n"
+    )
+    return str(path)
 
 
 def download_reel(reel: Reel, dest_dir: Path) -> Path:
@@ -42,6 +57,14 @@ def download_reel(reel: Reel, dest_dir: Path) -> Path:
         "no_warnings": True,
         "noprogress": True,
     }
+
+    # Instagram now returns an empty media response to anonymous requests —
+    # yt-dlp needs a logged-in `sessionid` cookie. Reuse the same session
+    # value instagrapi uses (Phase 9). Without it, downloads fail with
+    # "Instagram sent an empty media response".
+    cookiefile = _write_cookiefile(dest_dir)
+    if cookiefile:
+        ydl_opts["cookiefile"] = cookiefile
 
     def _run() -> tuple[Path, dict]:
         with YoutubeDL(ydl_opts) as ydl:
